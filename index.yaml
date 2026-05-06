@@ -4,13 +4,17 @@ entries:
   - annotations:
       artifacthub.io/category: storage
       artifacthub.io/changes: |
+        - kind: fixed
+          description: Driver renamed to csi.e2enetworks.com (vendor-namespaced); rebuild needed because the previous image baked the old name into the binary
+        - kind: fixed
+          description: Controller binary registers Node CSI service so csi-resizer's startup probe succeeds
         - kind: added
           description: Initial release with CreateVolume / DeleteVolume / Attach / Detach / Stage / Publish
         - kind: added
           description: Single-binary controller + node plugin
         - kind: added
           description: Helm chart with controller Deployment, node DaemonSet, RBAC, CSIDriver, StorageClass
-      artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.0
+      artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.1
       artifacthub.io/license: Apache-2.0
       artifacthub.io/links: |
         - name: source
@@ -20,11 +24,11 @@ entries:
         - name: e2e networks
           url: https://www.e2enetworks.com
     apiVersion: v2
-    appVersion: 0.1.0
-    created: "2026-05-06T12:03:27.023927168Z"
+    appVersion: 0.1.1
+    created: "2026-05-06T12:15:33.05247566Z"
     description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
       on self-managed Kubernetes clusters running on E2E VMs.
-    digest: adeeef5a253b33360b60ecd19f276af92bc0c55092acdbfd1012d41fb94d1803
+    digest: f4fe7d226e6d37b50a2b1e063f3e468eee1fe390418d9c7445200875437053c0
     home: https://github.com/yashGoyal40/csi-e2enetworks
     icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/storage-256.png
     keywords:
@@ -42,6 +46,6 @@ entries:
     - https://github.com/yashGoyal40/csi-e2enetworks
     type: application
     urls:
-    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.0.tgz
-    version: 0.1.0
-generated: "2026-05-06T12:03:27.023228785Z"
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.1.tgz
+    version: 0.1.1
+generated: "2026-05-06T12:15:33.051734204Z"
