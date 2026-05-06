@@ -1,0 +1,27 @@
+apiVersion: v1
+entries:
+  csi-e2enetworks:
+  - apiVersion: v2
+    appVersion: 0.1.0
+    created: "2026-05-06T11:47:13.738122508Z"
+    description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
+      on self-managed Kubernetes clusters running on E2E VMs.
+    digest: 696e0258f82c47f637f6945794f197215f76598d195d4e0b26a6ee1fde768230
+    home: https://github.com/yashgoyal40/csi-e2enetworks
+    keywords:
+    - csi
+    - e2enetworks
+    - storage
+    - block
+    - persistent-volume
+    maintainers:
+    - email: yashg4118@gmail.com
+      name: yashgoyal40
+    name: csi-e2enetworks
+    sources:
+    - https://github.com/yashgoyal40/csi-e2enetworks
+    type: application
+    urls:
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-05-06T11:47:13.737537958Z"

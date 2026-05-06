@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>csi-e2enetworks Helm Chart Repository</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           line-height: 1.6; color: #24292e; max-width: 900px; margin: 0 auto; padding: 20px; }
+    h1, h2, h3 { color: #2664EB; }
+    h1, h2 { border-bottom: 1px solid #eaecef; padding-bottom: 6px; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px;
+           font-family: 'SFMono-Regular', Consolas, monospace; font-size: 85%; }
+    pre { background: #f6f8fa; border: 1px solid #e1e4e8; padding: 16px;
+          border-radius: 6px; overflow-x: auto; }
+    pre code { background: transparent; padding: 0; }
+    a { color: #2664EB; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .repo-header { background: #f6f8fa; border: 1px solid #e1e4e8;
+                   border-radius: 6px; padding: 20px; margin-bottom: 30px; }
+    .repo-header code { background: #fff; border: 1px solid #e1e4e8;
+                        padding: 4px 8px; display: block; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <div class="repo-header">
+    <h2>📦 csi-e2enetworks Helm Chart</h2>
+    <p><strong>Add this repository:</strong></p>
+    <code>helm repo add csi-e2enetworks https://yashGoyal40.github.io/csi-e2enetworks</code>
+    <code>helm repo update</code>
+    <p><strong>Install the chart:</strong></p>
+    <code>helm install csi-e2enetworks csi-e2enetworks/csi-e2enetworks --namespace csi-e2enetworks --create-namespace -f my-values.yaml</code>
+    <p style="margin-bottom: 0;">
+      <a href="index.yaml">View index.yaml</a> |
+      <a href="https://github.com/yashGoyal40/csi-e2enetworks">GitHub</a> |
+      <a href="https://artifacthub.io/packages/helm/csi-e2enetworks/csi-e2enetworks">Artifact Hub</a>
+    </p>
+  </div>
+  <h1>csi-e2enetworks</h1>
+<p>Container Storage Interface (CSI) driver for <strong>E2E Networks block storage</strong>.<br />
+Lets you create <code>PersistentVolumeClaim</code>s in self-managed Kubernetes clusters<br />
+running on E2E Networks VMs and have them backed by real E2E block volumes<br />
+(provisioned, attached, formatted, and mounted automatically).</p>
+<blockquote>
+<p><strong>Status: 0.1 alpha.</strong> API client is end-to-end verified against the live<br />
+E2E API. Full in-cluster CSI flow has been built and Helm-packaged but the<br />
+first cluster install of the published chart is still outstanding.</p>
+</blockquote>
+<h2>What it does</h2>
+<table>
+<thead>
+<tr>
+<th>When you do this in K8s</th>
+<th>What the driver does on E2E</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kubectl apply -f pvc.yaml</code></td>
+<td>Calls <code>POST /block_storage/</code> → creates a 100 GB+ block volume</td>
+</tr>
+<tr>
+<td>Pod scheduled to a node</td>
+<td>Resolves the node's E2E <code>vm_id</code>, calls <code>PUT /block_storage/{id}/vm/attach/</code>, triggers PCI rescan, formats ext4/xfs, mounts into the pod</td>
+</tr>
+<tr>
+<td>Pod moves to another node</td>
+<td>Detaches from the old node, re-attaches on the new one</td>
+</tr>
+<tr>
+<td><code>kubectl delete pvc</code></td>
+<td>Detaches, waits for <code>Available</code>, calls <code>DELETE /block_storage/{id}/</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>ReadWriteOnce</code> only (E2E PDs cannot be shared between VMs at once).<br />
+Minimum size 100 GB (E2E's smallest tier).</p>
+<hr />
+<h2>Installation (single command)</h2>
+<pre><code class="language-bash">helm repo add csi-e2enetworks https://yashgoyal40.github.io/csi-e2enetworks
+helm repo update
+
+helm install csi-e2enetworks csi-e2enetworks/csi-e2enetworks \
+  --namespace csi-e2enetworks --create-namespace \
+  --set e2e.apiKey=&lt;UUID-API-KEY&gt; \
+  --set e2e.authToken=&lt;JWT-AUTH-TOKEN&gt; \
+  --set e2e.projectID=&lt;numeric-project-id&gt;
+</code></pre>
+<p>Or, point at a values file:</p>
+<pre><code class="language-yaml"># my-values.yaml
+e2e:
+  apiKey: &lt;UUID-API-KEY&gt;
+  authToken: &lt;JWT-AUTH-TOKEN&gt;
+  projectID: &quot;&lt;numeric-project-id&gt;&quot;
+  location: Delhi      # E2E region
+
+storageClass:
+  name: e2e-block      # name your apps will reference
+  default: false       # set true to make it the cluster default
+  parameters:
+    fsType: ext4       # or xfs
+</code></pre>
+<pre><code class="language-bash">helm install csi-e2enetworks csi-e2enetworks/csi-e2enetworks \
+  --namespace csi-e2enetworks --create-namespace \
+  -f my-values.yaml
+</code></pre>
+<p>The chart will create:</p>
+<ul>
+<li><code>Secret/csi-e2enetworks-creds</code> holding your API credentials (or use <code>existingSecret</code> to point at one you manage out-of-band).</li>
+<li><code>CSIDriver/e2e.csi.speakx.in</code>.</li>
+<li><code>Deployment/csi-e2enetworks-controller</code> with the controller plugin + sidecars (<code>csi-provisioner</code>, <code>csi-attacher</code>, <code>csi-resizer</code>).</li>
+<li><code>DaemonSet/csi-e2enetworks-node</code> running on every node (privileged, with <code>node-driver-registrar</code>).</li>
+<li><code>StorageClass/e2e-block</code>.</li>
+</ul>
+<h2>Where the credentials come from</h2>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>API Key + Auth Token</strong></td>
+<td>MyAccount → API → "Create new Token". The token must have <strong>Write</strong> capability for the driver to attach/detach/delete.</td>
+</tr>
+<tr>
+<td><strong>Project ID</strong></td>
+<td>Open https://myaccount.e2enetworks.com/, log in, then in the browser console run <code>localStorage.getItem('currentProject')</code> — it's the numeric ID (e.g. <code>50198</code>).</td>
+</tr>
+</tbody>
+</table>
+<h2>Use it</h2>
+<pre><code class="language-yaml"># pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: e2e-block
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: writer}
+spec:
+  containers:
+    - name: app
+      image: alpine
+      command: [&quot;sh&quot;, &quot;-c&quot;, &quot;echo hello &gt;&gt; /data/log.txt &amp;&amp; sleep 3600&quot;]
+      volumeMounts:
+        - {name: data, mountPath: /data}
+  volumes:
+    - name: data
+      persistentVolumeClaim: {claimName: data}
+</code></pre>
+<pre><code class="language-bash">kubectl apply -f pvc.yaml
+kubectl wait --for=condition=Bound pvc/data --timeout=2m
+kubectl exec writer -- cat /data/log.txt
+</code></pre>
+<hr />
+<h2>Architecture</h2>
+<pre><code>controller plugin (Deployment, 1 replica)             node plugin (DaemonSet, 1/node)
+┌──────────────────────────────────────┐              ┌────────────────────────────────┐
+│ csi-driver --mode=controller         │              │ csi-driver --mode=node         │
+│   CreateVolume    →  POST .../       │              │   NodeStageVolume   → diff     │
+│   DeleteVolume    →  DELETE          │              │     /sys/block, format,        │
+│   ControllerPublishVolume → PUT      │              │     mount to staging dir       │
+│   ControllerUnpublishVolume → PUT    │              │   NodePublishVolume → bind     │
+│                                      │              │     mount staging → pod        │
+│ csi-provisioner (sidecar)            │              │ node-driver-registrar (sidecar)│
+│ csi-attacher    (sidecar)            │              │                                │
+│ csi-resizer     (sidecar)            │              │ privileged + hostPath /dev/sys │
+└──────────────────────────────────────┘              └────────────────────────────────┘
+        ▲                                                              ▲
+        │ PersistentVolumeClaims, VolumeAttachments                    │ kubelet socket
+        │                                                              │ (CSI registry)
+        │              kube-apiserver  ───────────────────────────────┘
+        ▼
+  E2E Networks API   https://api.e2enetworks.com/myaccount/api/v1/...
+</code></pre>
+<h3>How the Node plugin identifies "which device just appeared"</h3>
+<p>E2E doesn't expose a serial / WWN inside the guest — <code>lsblk</code> shows attached<br />
+volumes with empty SERIAL / WWN columns and <code>/dev/disk/by-id/</code> is empty.<br />
+The node plugin works around this by:</p>
+<ol>
+<li>Snapshotting <code>/sys/block</code> (names + <code>diskseq</code>) <strong>before</strong> the attach.</li>
+<li>The controller does the API attach (synchronous).</li>
+<li><code>echo 1 &gt; /sys/bus/pci/rescan</code> to make the kernel re-enumerate.</li>
+<li>Polling <code>/sys/block</code> for ~30 s until a new device appears.</li>
+<li>Picking the entry with the highest <code>diskseq</code>.</li>
+</ol>
+<p>CSI serializes <code>ControllerPublishVolume</code> per (node, volume), so the diff is<br />
+race-free in practice.</p>
+<p>See <a href="./API_NOTES.md"><code>API_NOTES.md</code></a> for the full set of API quirks<br />
+encountered during the live probe (vm_id namespace mismatch, HTML rate-limit<br />
+pages on rapid PUT, status eventual-consistency on detach).</p>
+<hr />
+<h2>Configuration reference</h2>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>e2e.apiKey</code></td>
+<td><em>(required)</em></td>
+<td>UUID-format API key</td>
+</tr>
+<tr>
+<td><code>e2e.authToken</code></td>
+<td><em>(required)</em></td>
+<td>JWT token, expires in ~2 years</td>
+</tr>
+<tr>
+<td><code>e2e.projectID</code></td>
+<td><em>(required)</em></td>
+<td>Numeric project id</td>
+</tr>
+<tr>
+<td><code>e2e.location</code></td>
+<td><code>Delhi</code></td>
+<td>E2E region</td>
+</tr>
+<tr>
+<td><code>existingSecret</code></td>
+<td><em>(empty)</em></td>
+<td>Use a Secret you manage; needs keys <code>apiKey</code>, <code>authToken</code>, <code>projectID</code></td>
+</tr>
+<tr>
+<td><code>image.repository</code></td>
+<td><code>yashgoyal04/csi-e2enetworks</code></td>
+<td>Docker Hub public image</td>
+</tr>
+<tr>
+<td><code>image.tag</code></td>
+<td><code>0.1.0</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageClass.create</code></td>
+<td><code>true</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageClass.name</code></td>
+<td><code>e2e-block</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>storageClass.default</code></td>
+<td><code>false</code></td>
+<td>Make this the cluster default</td>
+</tr>
+<tr>
+<td><code>storageClass.reclaimPolicy</code></td>
+<td><code>Delete</code></td>
+<td>or <code>Retain</code></td>
+</tr>
+<tr>
+<td><code>storageClass.parameters.fsType</code></td>
+<td><code>ext4</code></td>
+<td>or <code>xfs</code></td>
+</tr>
+<tr>
+<td><code>storageClass.parameters.iops</code></td>
+<td><code>"1500"</code></td>
+<td>E2E IOPS tier (1500 for 100 GB, 3000 for 200 GB)</td>
+</tr>
+<tr>
+<td><code>storageClass.allowVolumeExpansion</code></td>
+<td><code>true</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>nodeSelector</code></td>
+<td><code>{}</code></td>
+<td>Restrict the node DaemonSet (defaults to every node)</td>
+</tr>
+<tr>
+<td><code>controllerPlugin.replicaCount</code></td>
+<td><code>1</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Sidecar images are pinned to recent stable releases — see <a href="./chart/values.yaml"><code>chart/values.yaml</code></a>.</p>
+<hr />
+<h2>Multiple environments (dev + stage with different E2E projects)</h2>
+<p>Install the chart twice with different project IDs and different StorageClass names:</p>
+<pre><code class="language-bash">helm install csi-dev csi-e2enetworks/csi-e2enetworks \
+  --namespace csi-e2enetworks-dev --create-namespace \
+  --set e2e.projectID=&lt;dev-project-id&gt; \
+  --set storageClass.name=e2e-block-dev \
+  -f dev-values.yaml
+
+helm install csi-stage csi-e2enetworks/csi-e2enetworks \
+  --namespace csi-e2enetworks-stage --create-namespace \
+  --set e2e.projectID=&lt;stage-project-id&gt; \
+  --set storageClass.name=e2e-block-stage \
+  -f stage-values.yaml
+</code></pre>
+<p>Apps then pick the right environment via <code>storageClassName: e2e-block-dev</code> or <code>e2e-block-stage</code>.</p>
+<hr />
+<h2>Develop / build from source</h2>
+<pre><code>.
+├── chart/                 Helm chart (published to GitHub Pages by .github/workflows/release.yml)
+├── cmd/
+│   ├── csi-e2enetworks/   Single-binary driver (controller + node)
+│   └── api-smoketest/     Standalone API exerciser
+├── pkg/
+│   ├── e2e/               E2E Networks API client
+│   └── driver/            CSI Identity + Controller + Node services
+├── Dockerfile             Multi-stage Alpine, ~13 MB compressed
+├── API_NOTES.md           Probe findings (read this if extending the API client)
+└── README.md
+</code></pre>
+<h3>Smoke-test the API client (no cluster needed)</h3>
+<p>Create <code>.env.local</code>:</p>
+<pre><code class="language-bash">export E2E_API_KEY=&quot;&lt;UUID&gt;&quot;
+export E2E_AUTH_TOKEN=&quot;&lt;JWT&gt;&quot;
+export E2E_PROJECT_ID=&quot;&lt;numeric&gt;&quot;
+export E2E_LOCATION=&quot;Delhi&quot;
+</code></pre>
+<p>Then:</p>
+<pre><code class="language-bash">source .env.local
+go run ./cmd/api-smoketest -nodeip &lt;private-ip-of-any-node-in-project&gt;
+</code></pre>
+<p>Walks: create → wait Available → attach → detach → wait Available → delete.</p>
+<h3>Build the Go binary</h3>
+<pre><code class="language-bash">go build -o bin/csi-e2enetworks ./cmd/csi-e2enetworks
+</code></pre>
+<h3>Build the image</h3>
+<pre><code class="language-bash">docker build -t yashgoyal04/csi-e2enetworks:0.1.0 .
+docker push  yashgoyal04/csi-e2enetworks:0.1.0
+</code></pre>
+<h3>Helm</h3>
+<pre><code class="language-bash">helm lint     chart --set e2e.apiKey=x --set e2e.authToken=x --set e2e.projectID=1
+helm template test  chart --set e2e.apiKey=x --set e2e.authToken=x --set e2e.projectID=1
+helm package  chart --destination ./bin
+</code></pre>
+<p>The GitHub Pages release pipeline (<code>.github/workflows/release.yml</code>) packages<br />
+the chart on every push to <code>main</code> that touches <code>chart/**</code> or <code>README.md</code>,<br />
+publishes the <code>.tgz</code> + <code>index.yaml</code> to <code>gh-pages</code>, and renders this README<br />
+as the repo landing page.</p>
+<hr />
+<h2>Known gaps / TODO</h2>
+<ul>
+<li>[ ] <strong>First cluster install</strong> of the published chart — image is on Docker Hub, chart packages cleanly, but the live <code>helm install</code> against a real cluster has not yet been done.</li>
+<li>[ ] <strong>Resize</strong> (<code>/upgrade/</code>) — driver advertises the capability but the API endpoint is not yet wired through.</li>
+<li>[ ] <strong>Snapshots</strong> — not implemented.</li>
+<li>[ ] <strong>JWT auto-refresh</strong> — current setup uses a long-lived JWT (≈2 years). Replace with a refresh-on-401 flow before that expires.</li>
+<li>[ ] <strong>ArtifactHub listing</strong> — repo metadata is in place (<code>chart/artifacthub-repo.yml</code>); listing it on artifacthub.io is a one-time manual step (add a "Helm" repo pointing at the gh-pages URL).</li>
+</ul>
+<hr />
+<h2>License</h2>
+<p>Apache-2.0 — see <a href="./LICENSE"><code>LICENSE</code></a>.</p>
+</body>
+</html>
