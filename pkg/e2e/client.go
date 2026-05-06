@@ -239,8 +239,9 @@ func (c *Client) EligibleVMs(ctx context.Context, volumeID int) ([]EligibleVM, e
 // verify the actual outcome by polling status.
 func (c *Client) AttachVolume(ctx context.Context, volumeID, vmID int) error {
 	// Wait until the volume is Available (or already Attached to this VM,
-	// in which case attach is a no-op). 2 min cap to bound retries.
-	wctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	// in which case attach is a no-op). Cap at 60s — Creating typically
+	// resolves in 10-15s; longer than that means something is wrong.
+	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	for {
 		v, err := c.GetVolume(wctx, volumeID)
@@ -259,7 +260,7 @@ func (c *Client) AttachVolume(ctx context.Context, volumeID, vmID int) error {
 		select {
 		case <-wctx.Done():
 			return fmt.Errorf("attach precheck: timeout waiting for volume %d to be Available (last=%s)", volumeID, v.Status)
-		case <-time.After(2 * time.Second):
+		case <-time.After(1 * time.Second):
 		}
 	}
 
@@ -269,9 +270,9 @@ func (c *Client) AttachVolume(ctx context.Context, volumeID, vmID int) error {
 	if err != nil && !isHTMLLimitErr(err) {
 		return err
 	}
-	wctx2, cancel2 := context.WithTimeout(ctx, 60*time.Second)
+	wctx2, cancel2 := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel2()
-	v, err := c.WaitForStatus(wctx2, volumeID, "Attached", 2*time.Second)
+	v, err := c.WaitForStatus(wctx2, volumeID, "Attached", 1*time.Second)
 	if err != nil {
 		return fmt.Errorf("attach verify: %w", err)
 	}
@@ -282,18 +283,19 @@ func (c *Client) AttachVolume(ctx context.Context, volumeID, vmID int) error {
 }
 
 // DetachVolume kicks off detach. Async — status flips to Available in ~10s.
-// We swallow HTML responses (same buggy API behavior as Attach) and verify
-// success by waiting for status=Available.
+// Idempotent: if the volume is already detached (E2E returns 412 "Disk is
+// not attached to vm"), or if the API returns an HTML rate-limit page,
+// we still verify the actual outcome by polling status=Available.
 func (c *Client) DetachVolume(ctx context.Context, volumeID, vmID int) error {
 	_, err := c.do(ctx, http.MethodPut,
 		"/block_storage/"+strconv.Itoa(volumeID)+"/vm/detach/",
 		map[string]int{"vm_id": vmID})
-	if err != nil && !isHTMLLimitErr(err) {
+	if err != nil && !isHTMLLimitErr(err) && !isAlreadyDetachedErr(err) {
 		return err
 	}
-	wctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	if _, err := c.WaitForStatus(wctx, volumeID, "Available", 3*time.Second); err != nil {
+	if _, err := c.WaitForStatus(wctx, volumeID, "Available", 1*time.Second); err != nil {
 		return fmt.Errorf("detach verify: %w", err)
 	}
 	return nil
@@ -301,6 +303,18 @@ func (c *Client) DetachVolume(ctx context.Context, volumeID, vmID int) error {
 
 func isHTMLLimitErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "text/html")
+}
+
+// isAlreadyDetachedErr matches the API's 412 response when a detach is
+// issued for a volume/VM pair that isn't actually attached. CSI attaches
+// retry detach idempotently, so we treat this as success.
+func isAlreadyDetachedErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "disk is not attached") ||
+		strings.Contains(s, "not attached to vm")
 }
 
 // WaitForStatus polls GetVolume until the status matches or the context times out.

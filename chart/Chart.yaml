@@ -2,8 +2,8 @@ apiVersion: v2
 name: csi-e2enetworks
 description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning on self-managed Kubernetes clusters running on E2E VMs.
 type: application
-version: 0.1.3
-appVersion: "0.1.2"
+version: 0.1.4
+appVersion: "0.1.3"
 kubeVersion: ">=1.24.0-0"
 home: https://github.com/yashGoyal40/csi-e2enetworks
 sources:
@@ -21,7 +21,7 @@ maintainers:
 annotations:
   artifacthub.io/category: storage
   artifacthub.io/license: Apache-2.0
-  artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.2
+  artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.3
   artifacthub.io/links: |
     - name: source
       url: https://github.com/yashGoyal40/csi-e2enetworks
@@ -30,6 +30,10 @@ annotations:
     - name: e2e networks
       url: https://www.e2enetworks.com
   artifacthub.io/changes: |
+    - kind: fixed
+      description: DetachVolume treats HTTP 412 "Disk is not attached to vm" as success (CSI retries detach idempotently; the old behavior wedged VolumeAttachment objects on cross-node move)
+    - kind: changed
+      description: AttachVolume / DetachVolume polls tightened to 1s with shorter caps (60s precheck, 30s post-attach) so the create→attach path lands in ~10–15s instead of 30–60s
     - kind: fixed
       description: Node plugin reads /host/sys/block instead of /sys/block — containerd remounts /sys per-container so the chart's hostPath:/sys was being shadowed and the post-attach device-discovery diff always returned no new device
     - kind: fixed
