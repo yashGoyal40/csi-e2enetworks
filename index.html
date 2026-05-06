@@ -107,7 +107,7 @@ storageClass:
 <p>The chart will create:</p>
 <ul>
 <li><code>Secret/csi-e2enetworks-creds</code> holding your API credentials (or use <code>existingSecret</code> to point at one you manage out-of-band).</li>
-<li><code>CSIDriver/e2e.csi.speakx.in</code>.</li>
+<li><code>CSIDriver/csi.e2enetworks.com</code>.</li>
 <li><code>Deployment/csi-e2enetworks-controller</code> with the controller plugin + sidecars (<code>csi-provisioner</code>, <code>csi-attacher</code>, <code>csi-resizer</code>).</li>
 <li><code>DaemonSet/csi-e2enetworks-node</code> running on every node (privileged, with <code>node-driver-registrar</code>).</li>
 <li><code>StorageClass/e2e-block</code>.</li>
@@ -127,7 +127,7 @@ storageClass:
 </tr>
 <tr>
 <td><strong>Project ID</strong></td>
-<td>Open https://myaccount.e2enetworks.com/, log in, then in the browser console run <code>localStorage.getItem('currentProject')</code> — it's the numeric ID (e.g. <code>50198</code>).</td>
+<td>Open https://myaccount.e2enetworks.com/, log in, then in the browser console run <code>localStorage.getItem('currentProject')</code> — it's the numeric ID (six digits or so).</td>
 </tr>
 </tbody>
 </table>
@@ -294,22 +294,6 @@ pages on rapid PUT, status eventual-consistency on detach).</p>
 </table>
 <p>Sidecar images are pinned to recent stable releases — see <a href="./chart/values.yaml"><code>chart/values.yaml</code></a>.</p>
 <hr />
-<h2>Multiple environments (dev + stage with different E2E projects)</h2>
-<p>Install the chart twice with different project IDs and different StorageClass names:</p>
-<pre><code class="language-bash">helm install csi-dev csi-e2enetworks/csi-e2enetworks \
-  --namespace csi-e2enetworks-dev --create-namespace \
-  --set e2e.projectID=&lt;dev-project-id&gt; \
-  --set storageClass.name=e2e-block-dev \
-  -f dev-values.yaml
-
-helm install csi-stage csi-e2enetworks/csi-e2enetworks \
-  --namespace csi-e2enetworks-stage --create-namespace \
-  --set e2e.projectID=&lt;stage-project-id&gt; \
-  --set storageClass.name=e2e-block-stage \
-  -f stage-values.yaml
-</code></pre>
-<p>Apps then pick the right environment via <code>storageClassName: e2e-block-dev</code> or <code>e2e-block-stage</code>.</p>
-<hr />
 <h2>Develop / build from source</h2>
 <pre><code>.
 ├── chart/                 Helm chart (published to GitHub Pages by .github/workflows/release.yml)
@@ -354,11 +338,9 @@ as the repo landing page.</p>
 <hr />
 <h2>Known gaps / TODO</h2>
 <ul>
-<li>[ ] <strong>First cluster install</strong> of the published chart — image is on Docker Hub, chart packages cleanly, but the live <code>helm install</code> against a real cluster has not yet been done.</li>
 <li>[ ] <strong>Resize</strong> (<code>/upgrade/</code>) — driver advertises the capability but the API endpoint is not yet wired through.</li>
 <li>[ ] <strong>Snapshots</strong> — not implemented.</li>
 <li>[ ] <strong>JWT auto-refresh</strong> — current setup uses a long-lived JWT (≈2 years). Replace with a refresh-on-401 flow before that expires.</li>
-<li>[ ] <strong>ArtifactHub listing</strong> — repo metadata is in place (<code>chart/artifacthub-repo.yml</code>); listing it on artifacthub.io is a one-time manual step (add a "Helm" repo pointing at the gh-pages URL).</li>
 </ul>
 <hr />
 <h2>License</h2>
