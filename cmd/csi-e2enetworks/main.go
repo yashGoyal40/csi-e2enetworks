@@ -45,16 +45,18 @@ func main() {
 		die("listen %s: %v", *endpoint, err)
 	}
 
+	// Register every CSI service on every binary. The mode flag is
+	// informational — kubelet and the controller sidecars each only
+	// call the RPCs relevant to their role. Registering all three lets
+	// the controller satisfy capability-probe RPCs (NodeGetCapabilities,
+	// etc.) that some sidecars (csi-resizer, csi-snapshotter) issue at
+	// startup against the controller socket.
 	server := grpc.NewServer()
 	csi.RegisterIdentityServer(server, d)
-	if *mode == "controller" || *mode == "all" {
-		csi.RegisterControllerServer(server, d)
-	}
-	if *mode == "node" || *mode == "all" {
-		if nodeIP == "" {
-			die("E2E_NODE_IP required in node mode")
-		}
-		csi.RegisterNodeServer(server, d)
+	csi.RegisterControllerServer(server, d)
+	csi.RegisterNodeServer(server, d)
+	if *mode == "node" && nodeIP == "" {
+		die("E2E_NODE_IP required in node mode")
 	}
 
 	// graceful shutdown
