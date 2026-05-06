@@ -48,30 +48,34 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Chart version: ${VERSION}, appVersion: ${APP_VERSION}"
 
-      # Build + push the driver image. Idempotent: skip if a tag of the
-      # same appVersion already exists on Docker Hub. Image gets pushed
-      # before the chart is packaged so consumers never see a chart
-      # pinned to a non-existent image tag.
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: yashgoyal04
-          password: ${{ secrets.DOCKER_API_KEY }}
-
-      - name: Check if image tag already exists
+      # Build + push the driver image. Idempotent: the manifest check below
+      # skips the whole build (and the docker login that comes with it) if
+      # an image with the same appVersion already lives on Docker Hub.
+      # Image is pushed before the chart is packaged so consumers never see
+      # a chart pinned to a non-existent image tag.
+      - name: Check if image tag already exists on Docker Hub
         id: image_exists
         env:
           APP_VERSION: ${{ steps.chart.outputs.appVersion }}
         run: |
+          # Public read needs no auth.
           if docker manifest inspect "yashgoyal04/csi-e2enetworks:${APP_VERSION}" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Image yashgoyal04/csi-e2enetworks:${APP_VERSION} already on Docker Hub, skipping build."
+            echo "Image yashgoyal04/csi-e2enetworks:${APP_VERSION} already on Docker Hub — skipping build + push."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Set up Docker Buildx
+        if: steps.image_exists.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: steps.image_exists.outputs.exists == 'false'
+        uses: docker/login-action@v3
+        with:
+          username: yashgoyal04
+          password: ${{ secrets.DOCKER_API_KEY }}
 
       - name: Build and push image
         if: steps.image_exists.outputs.exists == 'false'
