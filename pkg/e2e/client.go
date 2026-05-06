@@ -282,23 +282,61 @@ func (c *Client) AttachVolume(ctx context.Context, volumeID, vmID int) error {
 	return nil
 }
 
-// DetachVolume kicks off detach. Async — status flips to Available in ~10s.
-// Idempotent: if the volume is already detached (E2E returns 412 "Disk is
-// not attached to vm"), or if the API returns an HTML rate-limit page,
-// we still verify the actual outcome by polling status=Available.
+// DetachVolume detaches the volume from a specific VM.
+//
+// Semantics CSI cares about: "is the volume no longer attached to *this* VM?"
+// That's true when (a) the volume is Available, or (b) the volume happens to
+// be attached to some other VM (e.g. CSI raced with a cross-node move). Both
+// outcomes resolve the per-(volume,node) VolumeAttachment object that CSI is
+// reconciling, so we treat both as success.
+//
+// Idempotency:
+//   - If the volume is already not on this VM, short-circuit before the PUT.
+//   - If the PUT returns 412 "Disk is not attached" or an HTML rate-limit
+//     page, swallow it and verify the desired end state by polling.
 func (c *Client) DetachVolume(ctx context.Context, volumeID, vmID int) error {
-	_, err := c.do(ctx, http.MethodPut,
+	detachedFromUs := func(v *Volume) bool {
+		if v.Status == "Available" {
+			return true
+		}
+		if v.Status == "Attached" && v.VMDetail.VMID != vmID {
+			return true
+		}
+		return false
+	}
+
+	v, err := c.GetVolume(ctx, volumeID)
+	if err != nil {
+		return fmt.Errorf("detach precheck: %w", err)
+	}
+	if detachedFromUs(v) {
+		return nil
+	}
+
+	_, err = c.do(ctx, http.MethodPut,
 		"/block_storage/"+strconv.Itoa(volumeID)+"/vm/detach/",
 		map[string]int{"vm_id": vmID})
 	if err != nil && !isHTMLLimitErr(err) && !isAlreadyDetachedErr(err) {
 		return err
 	}
+
 	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	if _, err := c.WaitForStatus(wctx, volumeID, "Available", 1*time.Second); err != nil {
-		return fmt.Errorf("detach verify: %w", err)
+	for {
+		v, err := c.GetVolume(wctx, volumeID)
+		if err != nil {
+			return fmt.Errorf("detach verify: %w", err)
+		}
+		if detachedFromUs(v) {
+			return nil
+		}
+		select {
+		case <-wctx.Done():
+			return fmt.Errorf("detach verify: timeout waiting for volume %d to release vm_id=%d (last status=%s, on vm_id=%d)",
+				volumeID, vmID, v.Status, v.VMDetail.VMID)
+		case <-time.After(1 * time.Second):
+		}
 	}
-	return nil
 }
 
 func isHTMLLimitErr(err error) bool {
