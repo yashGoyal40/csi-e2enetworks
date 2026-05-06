@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "csi-e2enetworks.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controllerPlugin.replicaCount }}
+  selector:
+    matchLabels: {{- include "csi-e2enetworks.controllerSelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "csi-e2enetworks.labels" . | nindent 8 }}
+        {{- include "csi-e2enetworks.controllerSelector" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-controller-sa
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        # 1. The CSI driver itself in controller mode
+        - name: csi-driver
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--mode=controller"
+          env:
+            - name: E2E_API_KEY
+              valueFrom: { secretKeyRef: { name: {{ include "csi-e2enetworks.secretName" . }}, key: apiKey } }
+            - name: E2E_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ include "csi-e2enetworks.secretName" . }}, key: authToken } }
+            - name: E2E_PROJECT_ID
+              valueFrom: { secretKeyRef: { name: {{ include "csi-e2enetworks.secretName" . }}, key: projectID } }
+            - name: E2E_LOCATION
+              value: {{ .Values.e2e.location | quote }}
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources: {{- toYaml .Values.controllerPlugin.resources | nindent 12 }}
+
+        # 2. external-provisioner — turns PVCs into CreateVolume calls
+        - name: csi-provisioner
+          image: {{ .Values.sidecars.provisioner.image }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--feature-gates=Topology=false"
+            - "--leader-election=false"
+            - "--default-fstype=ext4"
+            - "--v=2"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+
+        # 3. external-attacher — turns VolumeAttachments into ControllerPublish
+        - name: csi-attacher
+          image: {{ .Values.sidecars.attacher.image }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election=false"
+            - "--v=2"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+
+        # 4. external-resizer — handles PVC expansion (allowVolumeExpansion=true)
+        - name: csi-resizer
+          image: {{ .Values.sidecars.resizer.image }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election=false"
+            - "--v=2"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+
+      volumes:
+        - name: socket-dir
+          emptyDir: {}

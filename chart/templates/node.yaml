@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}-node
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "csi-e2enetworks.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{- include "csi-e2enetworks.nodeSelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "csi-e2enetworks.labels" . | nindent 8 }}
+        {{- include "csi-e2enetworks.nodeSelector" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-node-sa
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        # 1. CSI driver in node mode
+        - name: csi-driver
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+          args:
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--mode=node"
+          env:
+            - name: E2E_API_KEY
+              valueFrom: { secretKeyRef: { name: {{ include "csi-e2enetworks.secretName" . }}, key: apiKey } }
+            - name: E2E_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ include "csi-e2enetworks.secretName" . }}, key: authToken } }
+            - name: E2E_PROJECT_ID
+              valueFrom: { secretKeyRef: { name: {{ include "csi-e2enetworks.secretName" . }}, key: projectID } }
+            - name: E2E_LOCATION
+              value: {{ .Values.e2e.location | quote }}
+            - name: E2E_NODE_IP
+              valueFrom: { fieldRef: { fieldPath: status.hostIP } }
+            - name: E2E_NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: pods-mount-dir
+              mountPath: {{ .Values.kubeletDir }}/pods
+              mountPropagation: Bidirectional
+            - name: device-dir
+              mountPath: /dev
+            - name: sys
+              mountPath: /sys
+            - name: host-root
+              mountPath: /host
+              mountPropagation: HostToContainer
+          resources: {{- toYaml .Values.nodePlugin.resources | nindent 12 }}
+
+        # 2. node-driver-registrar — registers the plugin with kubelet
+        - name: node-driver-registrar
+          image: {{ .Values.sidecars.nodeDriverRegistrar.image }}
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--kubelet-registration-path={{ .Values.kubeletDir }}/plugins/{{ include "csi-e2enetworks.driverName" . }}/csi.sock"
+            - "--v=2"
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+
+      volumes:
+        - name: plugin-dir
+          hostPath:
+            path: {{ .Values.kubeletDir }}/plugins/{{ include "csi-e2enetworks.driverName" . }}
+            type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: {{ .Values.kubeletDir }}/plugins_registry
+            type: Directory
+        - name: pods-mount-dir
+          hostPath:
+            path: {{ .Values.kubeletDir }}/pods
+            type: Directory
+        - name: device-dir
+          hostPath: { path: /dev }
+        - name: sys
+          hostPath: { path: /sys }
+        - name: host-root
+          hostPath: { path: / }

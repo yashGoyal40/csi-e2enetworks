@@ -1,0 +1,77 @@
+# Default values for csi-e2enetworks.
+# Override these via -f my-values.yaml or --set.
+
+# REQUIRED: E2E Networks credentials and project.
+# Either set them inline (apiKey/authToken/projectID) — easy for testing —
+# or point to an existing k8s Secret via existingSecret/existingSecretKey*.
+e2e:
+  apiKey: ""             # UUID-format API key from MyAccount → API
+  authToken: ""          # JWT auth token from MyAccount → API
+  projectID: ""          # Numeric project ID. Find in localStorage.currentProject
+  location: "Delhi"      # E2E region
+
+# Use an existing Secret instead of inlining credentials. The Secret must
+# carry keys: apiKey, authToken, projectID. (location is taken from values.)
+existingSecret: ""
+
+image:
+  repository: yashgoyal04/csi-e2enetworks
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+# - name: regcred
+
+# Node label that lets the Node plugin DaemonSet target only e2e VMs.
+# Leave empty to deploy on all nodes.
+nodeSelector: {}
+# Example:
+#   kubernetes.io/os: linux
+
+# Sidecar images. Pinned to recent stable.
+sidecars:
+  provisioner:
+    image: registry.k8s.io/sig-storage/csi-provisioner:v5.1.0
+  attacher:
+    image: registry.k8s.io/sig-storage/csi-attacher:v4.7.0
+  resizer:
+    image: registry.k8s.io/sig-storage/csi-resizer:v1.12.0
+  nodeDriverRegistrar:
+    image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.12.0
+  livenessprobe:
+    image: registry.k8s.io/sig-storage/livenessprobe:v2.14.0
+
+# StorageClass shipped by default. Set create=false to skip.
+storageClass:
+  create: true
+  name: e2e-block
+  default: false        # set true to make this the cluster default
+  reclaimPolicy: Delete # or Retain
+  parameters:
+    fsType: ext4        # ext4 or xfs
+    iops: "1500"        # 1500 = 100 GB tier; bump for larger volumes
+  allowVolumeExpansion: true
+  mountOptions: []
+
+# Only NodePlugin pods need privileged + host paths. Controller is plain.
+nodePlugin:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+controllerPlugin:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# CSI socket paths (kubelet contract — change only if you know why)
+kubeletDir: /var/lib/kubelet

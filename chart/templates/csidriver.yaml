@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: {{ include "csi-e2enetworks.driverName" . }}
+  labels:
+    {{- include "csi-e2enetworks.labels" . | nindent 4 }}
+spec:
+  attachRequired: true
+  podInfoOnMount: false
+  fsGroupPolicy: File
+  volumeLifecycleModes:
+    - Persistent

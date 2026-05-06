@@ -1,0 +1,26 @@
+# Local credentials (NEVER commit)
+.env
+.env.local
+.env.*.local
+
+# Build output
+bin/
+dist/
+*.tgz
+
+# Helm packaged charts
+pages/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*.log
+
+# Go
+vendor/
+*.test
+*.out
+coverage.*
