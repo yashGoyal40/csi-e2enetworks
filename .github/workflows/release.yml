@@ -110,3 +110,47 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./pages
           keep_files: false
+
+      # Create a GitHub Release for the packaged chart, tagged from
+      # Chart.yaml's version. Idempotent: re-runs for the same version
+      # silently no-op so README-only edits don't fail the workflow.
+      - name: Create GitHub Release for chart version
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VERSION=$(awk '/^version:/{print $2}' chart/Chart.yaml)
+          APP_VERSION=$(awk '/^appVersion:/{gsub(/"/,"",$2); print $2}' chart/Chart.yaml)
+          TAG="v${VERSION}"
+          TGZ="./pages/csi-e2enetworks-${VERSION}.tgz"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; nothing to do."
+            exit 0
+          fi
+
+          NOTES_FILE=$(mktemp)
+          cat > "$NOTES_FILE" <<EOF
+          Helm chart \`csi-e2enetworks\` v${VERSION} (appVersion ${APP_VERSION}).
+
+          Container image: \`docker.io/yashgoyal04/csi-e2enetworks:${APP_VERSION}\`
+
+          ## Install
+
+          \`\`\`bash
+          helm repo add csi-e2enetworks https://${GITHUB_REPOSITORY_OWNER}.github.io/csi-e2enetworks
+          helm repo update
+          helm install csi-e2enetworks csi-e2enetworks/csi-e2enetworks \\
+            --namespace csi-e2enetworks --create-namespace \\
+            --set e2e.apiKey=<UUID> \\
+            --set e2e.authToken=<JWT> \\
+            --set e2e.projectID=<numeric-project-id>
+          \`\`\`
+
+          See [README](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/README.md) for full options.
+          EOF
+
+          gh release create "$TAG" "$TGZ" \
+            --title "csi-e2enetworks ${VERSION}" \
+            --notes-file "$NOTES_FILE"
