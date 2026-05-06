@@ -1,6 +1,8 @@
 # Artifact Hub repository metadata
 # Documentation: https://artifacthub.io/docs/topics/repositories/
 
+repositoryID: 3b6db90e-ef22-40ee-ac4c-b82ac909a3d3
+
 owners:
-  - name: yashgoyal40
+  - name: yashGoyal40
     email: yashg4118@gmail.com
