@@ -4,9 +4,11 @@ description: CSI driver for E2E Networks block storage. Enables dynamic PVC prov
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-home: https://github.com/yashgoyal40/csi-e2enetworks
+kubeVersion: ">=1.24.0-0"
+home: https://github.com/yashGoyal40/csi-e2enetworks
 sources:
-  - https://github.com/yashgoyal40/csi-e2enetworks
+  - https://github.com/yashGoyal40/csi-e2enetworks
+icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/storage-256.png
 keywords:
   - csi
   - e2enetworks
@@ -14,5 +16,23 @@ keywords:
   - block
   - persistent-volume
 maintainers:
-  - name: yashgoyal40
+  - name: yashGoyal40
     email: yashg4118@gmail.com
+annotations:
+  artifacthub.io/category: storage
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.0
+  artifacthub.io/links: |
+    - name: source
+      url: https://github.com/yashGoyal40/csi-e2enetworks
+    - name: image
+      url: https://hub.docker.com/r/yashgoyal04/csi-e2enetworks
+    - name: e2e networks
+      url: https://www.e2enetworks.com
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial release with CreateVolume / DeleteVolume / Attach / Detach / Stage / Publish
+    - kind: added
+      description: Single-binary controller + node plugin
+    - kind: added
+      description: Helm chart with controller Deployment, node DaemonSet, RBAC, CSIDriver, StorageClass

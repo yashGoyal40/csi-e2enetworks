@@ -62,7 +62,7 @@ helm install csi-e2enetworks csi-e2enetworks/csi-e2enetworks \
 The chart will create:
 
 - `Secret/csi-e2enetworks-creds` holding your API credentials (or use `existingSecret` to point at one you manage out-of-band).
-- `CSIDriver/e2e.csi.speakx.in`.
+- `CSIDriver/csi.e2enetworks.com`.
 - `Deployment/csi-e2enetworks-controller` with the controller plugin + sidecars (`csi-provisioner`, `csi-attacher`, `csi-resizer`).
 - `DaemonSet/csi-e2enetworks-node` running on every node (privileged, with `node-driver-registrar`).
 - `StorageClass/e2e-block`.
@@ -72,7 +72,7 @@ The chart will create:
 | What | Where |
 |---|---|
 | **API Key + Auth Token** | MyAccount → API → "Create new Token". The token must have **Write** capability for the driver to attach/detach/delete. |
-| **Project ID** | Open https://myaccount.e2enetworks.com/, log in, then in the browser console run `localStorage.getItem('currentProject')` — it's the numeric ID (e.g. `50198`). |
+| **Project ID** | Open https://myaccount.e2enetworks.com/, log in, then in the browser console run `localStorage.getItem('currentProject')` — it's the numeric ID (six digits or so). |
 
 ## Use it
 
@@ -181,28 +181,6 @@ Sidecar images are pinned to recent stable releases — see [`chart/values.yaml`
 
 ---
 
-## Multiple environments (dev + stage with different E2E projects)
-
-Install the chart twice with different project IDs and different StorageClass names:
-
-```bash
-helm install csi-dev csi-e2enetworks/csi-e2enetworks \
-  --namespace csi-e2enetworks-dev --create-namespace \
-  --set e2e.projectID=<dev-project-id> \
-  --set storageClass.name=e2e-block-dev \
-  -f dev-values.yaml
-
-helm install csi-stage csi-e2enetworks/csi-e2enetworks \
-  --namespace csi-e2enetworks-stage --create-namespace \
-  --set e2e.projectID=<stage-project-id> \
-  --set storageClass.name=e2e-block-stage \
-  -f stage-values.yaml
-```
-
-Apps then pick the right environment via `storageClassName: e2e-block-dev` or `e2e-block-stage`.
-
----
-
 ## Develop / build from source
 
 ```
@@ -269,11 +247,9 @@ as the repo landing page.
 
 ## Known gaps / TODO
 
-- [ ] **First cluster install** of the published chart — image is on Docker Hub, chart packages cleanly, but the live `helm install` against a real cluster has not yet been done.
 - [ ] **Resize** (`/upgrade/`) — driver advertises the capability but the API endpoint is not yet wired through.
 - [ ] **Snapshots** — not implemented.
 - [ ] **JWT auto-refresh** — current setup uses a long-lived JWT (≈2 years). Replace with a refresh-on-401 flow before that expires.
-- [ ] **ArtifactHub listing** — repo metadata is in place (`chart/artifacthub-repo.yml`); listing it on artifacthub.io is a one-time manual step (add a "Helm" repo pointing at the gh-pages URL).
 
 ---
 

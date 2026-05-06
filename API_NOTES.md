@@ -1,7 +1,7 @@
 # E2E Networks Block Storage API — Probe Findings
 
 Manual API exploration to inform CSI driver design. All operations confirmed
-on project `speakx-dev` (id `50198`) in location `Delhi`.
+end-to-end against the live API in location `Delhi`.
 
 ## Auth
 
@@ -14,7 +14,7 @@ Query param:  apikey=<API-KEY>
 
 Example:
 ```
-GET /myaccount/api/v1/block_storage/?apikey=<KEY>&location=Delhi&project_id=50198
+GET /myaccount/api/v1/block_storage/?apikey=<KEY>&location=Delhi&project_id=<PROJECT_ID>
 ```
 
 JWT issuer: `gateway.e2enetworks.com/auth/realms/apiman`.
@@ -49,24 +49,24 @@ block-storage API expects.
 
 ```
 GET /nodes/ →
-  e2e-74-49 (CP, 10.0.1.1)  → id 309489
-  e2e-68-59 (worker, 10.0.1.2) → id 310277
+  node-A → id 30xxxx
+  node-B → id 30xxxy
 
 GET /block_storage/{id}/vm/attach/ →
-  CP     → vm_id 315177    ← THIS is what attach/detach use
-  worker → vm_id 315801    ← THIS is what attach/detach use
+  node-A → vm_id 31xxxx    ← THIS is what attach/detach use
+  node-B → vm_id 31xxxy    ← THIS is what attach/detach use
 ```
 
 Both are present in the GET-volume response under `vm_detail`:
 ```json
 "vm_detail": {
-  "node_id": 310277,    // == /nodes/ id
-  "vm_id": 315801       // == block-storage API id
+  "node_id": 30xxxx,    // == /nodes/ id
+  "vm_id": 31xxxx       // == block-storage API id
 }
 ```
 
 **CSI driver implication:** at NodeStageVolume time, the driver knows the
-node's hostname (e.g. `e2e-68-59`). It must:
+node's hostname. It must:
 1. Map hostname → public/private IP (via the Node object's `status.addresses`)
 2. Call `GET /block_storage/{id}/vm/attach/` to get the candidate list
 3. Match by IP, harvest the `vm_id`
@@ -151,8 +151,8 @@ Minimum size is 100 GB. The CSI driver should round all PVC requests up to
 {
   "code": 200,
   "data": {
-    "block_id": 41927,
-    "name": "csi-probe-1",
+    "block_id": <volume-id>,
+    "name": "<volume-name>",
     "size": 95368,
     "status": "Attached",
     "template": {
@@ -161,9 +161,9 @@ Minimum size is 100 GB. The CSI driver should round all PVC requests up to
       "TOTAL_IOPS_SEC": "1500"
     },
     "vm_detail": {
-      "node_id": 310277,
-      "vm_id": 315801,
-      "vm_name": "GDC3-L40S-60-220GB_v1-539"
+      "node_id": <node-id-from-nodes-api>,
+      "vm_id":   <vm-id-from-attach-list>,
+      "vm_name": "<plan-derived-name>"
     },
     "size_string": "100 GB",
     "bs_size": 0.1,
@@ -180,8 +180,3 @@ Minimum size is 100 GB. The CSI driver should round all PVC requests up to
       lsblk-diff approach is the only path.
 - [ ] Confirm whether attach across regions (Delhi vs others) needs a
       different path; current probe is Delhi-only.
-
-## Speakx project IDs
-
-- `speakx-dev`   → project_id `50198` (TBD: confirm in dashboard)
-- `speakx-stage` → project_id `?????` (TBD)

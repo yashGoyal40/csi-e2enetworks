@@ -2,7 +2,7 @@
 //   create → wait Available → attach → detach → wait Available → delete
 //
 // Build & run:
-//   go run ./cmd/api-smoketest -nodeip 10.0.1.2
+//   go run ./cmd/api-smoketest -nodeip <node-private-ip>
 //
 // Reads E2E_API_KEY, E2E_AUTH_TOKEN, E2E_PROJECT_ID, E2E_LOCATION from env.
 package main
@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	nodeIP := flag.String("nodeip", "10.0.1.2", "private IP of the node to attach to")
+	nodeIP := flag.String("nodeip", "", "private IP of the node to attach to")
 	keep := flag.Bool("keep", false, "skip detach+delete (leave the volume around)")
 	flag.Parse()
 
@@ -27,6 +27,9 @@ func main() {
 	proj := os.Getenv("E2E_PROJECT_ID")
 	if apiKey == "" || auth == "" || proj == "" {
 		die("E2E_API_KEY / E2E_AUTH_TOKEN / E2E_PROJECT_ID must be set")
+	}
+	if *nodeIP == "" {
+		die("--nodeip is required (private IP of any node in the project)")
 	}
 	c := e2e.New(apiKey, auth, proj)
 

@@ -1,0 +1,47 @@
+csi-e2enetworks {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+1. Verify the controller and node plugins are running:
+
+   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/name=csi-e2enetworks
+   kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Confirm the CSI driver is registered with kubelet on every node:
+
+   kubectl get csinode -o yaml | grep {{ include "csi-e2enetworks.driverName" . }}
+
+3. Use the StorageClass in a PersistentVolumeClaim:
+{{- if .Values.storageClass.create }}
+
+   apiVersion: v1
+   kind: PersistentVolumeClaim
+   metadata:
+     name: my-data
+   spec:
+     accessModes: [ReadWriteOnce]
+     storageClassName: {{ .Values.storageClass.name }}
+     resources:
+       requests:
+         storage: 100Gi
+{{- else }}
+
+   StorageClass creation was disabled. Define one yourself with:
+     provisioner: {{ include "csi-e2enetworks.driverName" . }}
+{{- end }}
+
+4. Tail the controller logs while the PVC binds:
+
+   kubectl -n {{ .Release.Namespace }} logs -f deploy/{{ .Release.Name }}-controller -c csi-driver
+
+5. Tail the node-plugin logs on the node where your pod lands:
+
+   kubectl -n {{ .Release.Namespace }} logs -f -l {{ include "csi-e2enetworks.nodeSelector" . }} -c csi-driver
+
+Notes
+-----
+- E2E volumes have a 100 GB minimum tier; the driver rounds smaller PVCs up.
+- ReadWriteOnce only — E2E block storage cannot attach to multiple VMs at once.
+- The first attach on a freshly-rebooted node may need ~5 s for the kernel
+  PCI rescan to register the new device. Subsequent operations are fast.
+
+Documentation: https://github.com/yashGoyal40/csi-e2enetworks
+Issues:        https://github.com/yashGoyal40/csi-e2enetworks/issues

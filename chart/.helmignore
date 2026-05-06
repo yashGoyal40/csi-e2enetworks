@@ -1,0 +1,27 @@
+# Patterns to ignore when building packages.
+# Shell glob, relative paths, and negation (prefixed with !).
+.DS_Store
+# Common VCS dirs
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+# Common backup files
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+# IDEs
+.project
+.idea/
+*.tmproj
+.vscode/
+# CI / CD
+.github/
+# Artifact Hub repo config — must live in the repo root for the index, not in
+# every packaged chart.
+artifacthub-repo.yml

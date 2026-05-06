@@ -15,7 +15,7 @@ app: {{ .Release.Name }}-node
 {{- end }}
 
 {{- define "csi-e2enetworks.driverName" -}}
-e2e.csi.speakx.in
+csi.e2enetworks.com
 {{- end }}
 
 {{/* Resolve credentials Secret name */}}

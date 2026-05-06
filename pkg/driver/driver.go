@@ -24,7 +24,7 @@ import (
 
 const (
 	// PluginName is the CSI driver name; storage classes reference this.
-	PluginName = "e2e.csi.speakx.in"
+	PluginName = "csi.e2enetworks.com"
 	Version    = "0.1.0"
 
 	minVolumeBytes = 100 * 1024 * 1024 * 1024 // 100 GB minimum tier on E2E
