@@ -25,10 +25,17 @@ import (
 const (
 	// PluginName is the CSI driver name; storage classes reference this.
 	PluginName = "csi.e2enetworks.com"
-	Version    = "0.1.0"
+	Version    = "0.1.2"
 
 	minVolumeBytes = 100 * 1024 * 1024 * 1024 // 100 GB minimum tier on E2E
 	defaultFSType  = "ext4"
+
+	// hostPath bind: containerd mounts its own /sys over the pod's /sys, so
+	// the chart's hostPath:/sys volume doesn't take effect — pods see only
+	// loop devices in /sys/block. We also mount the host root at /host, so
+	// the real /sys lives at /host/sys inside the pod and works reliably.
+	sysBlockDir   = "/host/sys/block"
+	pciRescanFile = "/host/sys/bus/pci/rescan"
 )
 
 // Driver bundles all three CSI servers behind a single struct.
@@ -328,7 +335,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	}
 
 	// Force PCI rescan in case kubelet got us here without one.
-	_ = os.WriteFile("/sys/bus/pci/rescan", []byte("1"), 0)
+	_ = os.WriteFile(pciRescanFile, []byte("1"), 0)
 
 	// Wait for a new device. Up to 30 s.
 	deadline := time.Now().Add(30 * time.Second)
@@ -342,7 +349,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 			devPath = "/dev/" + d
 			break
 		}
-		_ = os.WriteFile("/sys/bus/pci/rescan", []byte("1"), 0)
+		_ = os.WriteFile(pciRescanFile, []byte("1"), 0)
 		time.Sleep(1 * time.Second)
 	}
 	if devPath == "" {
@@ -408,7 +415,7 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 // snapshotBlockDevs returns the set of block-device names under /sys/block.
 // We only care about ones whose names start with vd or sd (real disks).
 func snapshotBlockDevs() (map[string]uint64, error) {
-	ents, err := os.ReadDir("/sys/block")
+	ents, err := os.ReadDir(sysBlockDir)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +425,7 @@ func snapshotBlockDevs() (map[string]uint64, error) {
 		if !strings.HasPrefix(n, "vd") && !strings.HasPrefix(n, "sd") {
 			continue
 		}
-		seq, err := readUint64(filepath.Join("/sys/block", n, "diskseq"))
+		seq, err := readUint64(filepath.Join(sysBlockDir, n, "diskseq"))
 		if err != nil {
 			seq = 0
 		}

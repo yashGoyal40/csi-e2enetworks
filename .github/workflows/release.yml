@@ -89,6 +89,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ArtifactHub renders the README.md from inside the chart .tgz, not the
+      # one at repo root. Sync the canonical README into chart/ so we keep one
+      # source of truth and the chart catalog page stays in sync.
+      - name: Sync README.md into chart
+        run: cp README.md chart/README.md
+
       - name: Package Helm Chart
         run: |
           mkdir -p ./pages

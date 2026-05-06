@@ -229,19 +229,49 @@ func (c *Client) EligibleVMs(ctx context.Context, volumeID int) ([]EligibleVM, e
 
 // AttachVolume attaches the volume to the VM. PUT, not POST.
 //
-// Workaround: E2E's API occasionally returns an HTML rate-limit page even
-// when the operation went through. We swallow non-JSON responses on the PUT,
-// then verify the actual outcome by polling status.
+// CreateVolume returns immediately with status=Creating; if a caller (e.g.
+// CSI's ControllerPublishVolume right after CreateVolume) issues attach
+// before the volume is Available, the API replies HTTP 500. Wait for the
+// volume to become Available before issuing the PUT.
+//
+// Workaround #2: E2E's API occasionally returns an HTML rate-limit page
+// even when the PUT went through. Swallow non-JSON responses there and
+// verify the actual outcome by polling status.
 func (c *Client) AttachVolume(ctx context.Context, volumeID, vmID int) error {
+	// Wait until the volume is Available (or already Attached to this VM,
+	// in which case attach is a no-op). 2 min cap to bound retries.
+	wctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	for {
+		v, err := c.GetVolume(wctx, volumeID)
+		if err != nil {
+			return fmt.Errorf("attach precheck: %w", err)
+		}
+		if v.Status == "Attached" && v.VMDetail.VMID == vmID {
+			return nil // already on the target VM
+		}
+		if v.Status == "Attached" && v.VMDetail.VMID != vmID {
+			return fmt.Errorf("volume %d already attached to vm_id=%d, want %d", volumeID, v.VMDetail.VMID, vmID)
+		}
+		if v.Status == "Available" {
+			break
+		}
+		select {
+		case <-wctx.Done():
+			return fmt.Errorf("attach precheck: timeout waiting for volume %d to be Available (last=%s)", volumeID, v.Status)
+		case <-time.After(2 * time.Second):
+		}
+	}
+
 	_, err := c.do(ctx, http.MethodPut,
 		"/block_storage/"+strconv.Itoa(volumeID)+"/vm/attach/",
 		map[string]int{"vm_id": vmID})
 	if err != nil && !isHTMLLimitErr(err) {
 		return err
 	}
-	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	v, err := c.WaitForStatus(wctx, volumeID, "Attached", 2*time.Second)
+	wctx2, cancel2 := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel2()
+	v, err := c.WaitForStatus(wctx2, volumeID, "Attached", 2*time.Second)
 	if err != nil {
 		return fmt.Errorf("attach verify: %w", err)
 	}
