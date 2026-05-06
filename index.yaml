@@ -4,10 +4,16 @@ entries:
   - annotations:
       artifacthub.io/category: storage
       artifacthub.io/changes: |
+        - kind: removed
+          description: csi-resizer sidecar (driver does not yet implement ControllerExpandVolume; will return when /upgrade/ is wired through)
+        - kind: changed
+          description: Default image.tag is now `latest` with imagePullPolicy Always; pin to a numeric tag for reproducible deploys
+        - kind: changed
+          description: storageClass.allowVolumeExpansion default flipped to false to match the no-resizer reality
         - kind: fixed
-          description: Driver renamed to csi.e2enetworks.com (vendor-namespaced); rebuild needed because the previous image baked the old name into the binary
+          description: Driver renamed to csi.e2enetworks.com (vendor-namespaced)
         - kind: fixed
-          description: Controller binary registers Node CSI service so csi-resizer's startup probe succeeds
+          description: Controller binary registers Node CSI service so sidecar capability probes succeed
         - kind: added
           description: Initial release with CreateVolume / DeleteVolume / Attach / Detach / Stage / Publish
         - kind: added
@@ -25,10 +31,10 @@ entries:
           url: https://www.e2enetworks.com
     apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-05-06T12:15:33.05247566Z"
+    created: "2026-05-06T12:28:50.134238474Z"
     description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
       on self-managed Kubernetes clusters running on E2E VMs.
-    digest: f4fe7d226e6d37b50a2b1e063f3e468eee1fe390418d9c7445200875437053c0
+    digest: 0ccad88a7c10e46843df7d9fefaf47fa67d967afdc5621dcb1244042e2051cc2
     home: https://github.com/yashGoyal40/csi-e2enetworks
     icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/storage-256.png
     keywords:
@@ -46,6 +52,6 @@ entries:
     - https://github.com/yashGoyal40/csi-e2enetworks
     type: application
     urls:
-    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.1.tgz
-    version: 0.1.1
-generated: "2026-05-06T12:15:33.051734204Z"
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.2.tgz
+    version: 0.1.2
+generated: "2026-05-06T12:28:50.133293321Z"
