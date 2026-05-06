@@ -8,7 +8,7 @@ kubeVersion: ">=1.24.0-0"
 home: https://github.com/yashGoyal40/csi-e2enetworks
 sources:
   - https://github.com/yashGoyal40/csi-e2enetworks
-icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/storage-256.png
+icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
 keywords:
   - csi
   - e2enetworks
