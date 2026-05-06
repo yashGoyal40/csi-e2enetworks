@@ -4,8 +4,12 @@ entries:
   - annotations:
       artifacthub.io/category: storage
       artifacthub.io/changes: |
+        - kind: fixed
+          description: Node plugin reads /host/sys/block instead of /sys/block — containerd remounts /sys per-container so the chart's hostPath:/sys was being shadowed and the post-attach device-discovery diff always returned no new device
+        - kind: fixed
+          description: AttachVolume now polls for status=Available before issuing the PUT, eliminating the HTTP 500 retry loop ControllerPublishVolume hit when CreateVolume returned status=Creating
         - kind: removed
-          description: csi-resizer sidecar (driver does not yet implement ControllerExpandVolume; will return when /upgrade/ is wired through)
+          description: csi-resizer sidecar (E2E API does not expose volume resize for non-admin tokens; the role required for PATCH /block_storage/{id}/ is gated)
         - kind: changed
           description: Default image.tag is now `latest` with imagePullPolicy Always; pin to a numeric tag for reproducible deploys
         - kind: changed
@@ -20,7 +24,7 @@ entries:
           description: Single-binary controller + node plugin
         - kind: added
           description: Helm chart with controller Deployment, node DaemonSet, RBAC, CSIDriver, StorageClass
-      artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.1
+      artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.2
       artifacthub.io/license: Apache-2.0
       artifacthub.io/links: |
         - name: source
@@ -30,11 +34,11 @@ entries:
         - name: e2e networks
           url: https://www.e2enetworks.com
     apiVersion: v2
-    appVersion: 0.1.1
-    created: "2026-05-06T12:28:50.134238474Z"
+    appVersion: 0.1.2
+    created: "2026-05-06T12:50:53.010774734Z"
     description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
       on self-managed Kubernetes clusters running on E2E VMs.
-    digest: 0ccad88a7c10e46843df7d9fefaf47fa67d967afdc5621dcb1244042e2051cc2
+    digest: 42cdee2da13459cc31560bff5e47f4d1c83ce7e68a07c3f9949171b7f015ae54
     home: https://github.com/yashGoyal40/csi-e2enetworks
     icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/storage-256.png
     keywords:
@@ -52,6 +56,6 @@ entries:
     - https://github.com/yashGoyal40/csi-e2enetworks
     type: application
     urls:
-    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.2.tgz
-    version: 0.1.2
-generated: "2026-05-06T12:28:50.133293321Z"
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.3.tgz
+    version: 0.1.3
+generated: "2026-05-06T12:50:53.009869387Z"
