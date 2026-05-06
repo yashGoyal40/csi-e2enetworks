@@ -2,7 +2,7 @@ apiVersion: v2
 name: csi-e2enetworks
 description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning on self-managed Kubernetes clusters running on E2E VMs.
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: "0.1.1"
 kubeVersion: ">=1.24.0-0"
 home: https://github.com/yashGoyal40/csi-e2enetworks
@@ -30,10 +30,16 @@ annotations:
     - name: e2e networks
       url: https://www.e2enetworks.com
   artifacthub.io/changes: |
+    - kind: removed
+      description: csi-resizer sidecar (driver does not yet implement ControllerExpandVolume; will return when /upgrade/ is wired through)
+    - kind: changed
+      description: Default image.tag is now `latest` with imagePullPolicy Always; pin to a numeric tag for reproducible deploys
+    - kind: changed
+      description: storageClass.allowVolumeExpansion default flipped to false to match the no-resizer reality
     - kind: fixed
-      description: Driver renamed to csi.e2enetworks.com (vendor-namespaced); rebuild needed because the previous image baked the old name into the binary
+      description: Driver renamed to csi.e2enetworks.com (vendor-namespaced)
     - kind: fixed
-      description: Controller binary registers Node CSI service so csi-resizer's startup probe succeeds
+      description: Controller binary registers Node CSI service so sidecar capability probes succeed
     - kind: added
       description: Initial release with CreateVolume / DeleteVolume / Attach / Detach / Stage / Publish
     - kind: added

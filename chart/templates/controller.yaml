@@ -70,19 +70,11 @@ spec:
             - name: socket-dir
               mountPath: /csi
 
-        # 4. external-resizer — handles PVC expansion (allowVolumeExpansion=true)
-        - name: csi-resizer
-          image: {{ .Values.sidecars.resizer.image }}
-          args:
-            - "--csi-address=$(ADDRESS)"
-            - "--leader-election=false"
-            - "--v=2"
-          env:
-            - name: ADDRESS
-              value: /csi/csi.sock
-          volumeMounts:
-            - name: socket-dir
-              mountPath: /csi
+        # csi-resizer would go here, but the driver doesn't yet advertise
+        # ControllerExpandVolume (the E2E /upgrade/ endpoint isn't wired
+        # through), so the sidecar would crashloop with "neither supports
+        # controller resize nor node resize". Add it back together with
+        # the EXPAND_VOLUME capability when resize lands.
 
       volumes:
         - name: socket-dir
