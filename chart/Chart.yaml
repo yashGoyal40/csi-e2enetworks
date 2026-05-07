@@ -2,7 +2,7 @@ apiVersion: v2
 name: csi-e2enetworks
 description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning on self-managed Kubernetes clusters running on E2E VMs.
 type: application
-version: 0.1.6
+version: 0.1.7
 appVersion: "0.1.5"
 kubeVersion: ">=1.24.0-0"
 home: https://github.com/yashGoyal40/csi-e2enetworks
@@ -30,6 +30,8 @@ annotations:
     - name: e2e networks
       url: https://www.e2enetworks.com
   artifacthub.io/changes: |
+    - kind: added
+      description: values.schema.json — Helm now validates user values on install/upgrade/template/lint, and ArtifactHub renders the schema panel on the chart page. Enforces anyOf(inline e2e creds OR existingSecret), enum constraints on image.pullPolicy / storageClass.reclaimPolicy / storageClass.parameters.fsType, and integer-string IOPS.
     - kind: fixed
       description: NodeStageVolume now identifies the freshly attached disk by picking the unmounted virtio device with the highest diskseq, instead of diffing /sys/block before/after a PCI rescan. The diff approach was racy — by the time NodeStage runs, the device is often already enumerated by the kernel, so the diff returned empty and the driver gave up with "no new block device appeared within 30s after attach". Reads /host/proc/1/mounts (host PID-1's mount NS) to identify which devices are already in use.
     - kind: fixed

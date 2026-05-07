@@ -1,0 +1,229 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "csi-e2enetworks values",
+  "description": "Configuration for the E2E Networks CSI driver Helm chart.",
+  "type": "object",
+  "required": ["e2e", "image", "sidecars", "storageClass", "kubeletDir"],
+  "anyOf": [
+    {
+      "title": "Inline credentials",
+      "required": ["e2e"],
+      "properties": {
+        "e2e": {
+          "type": "object",
+          "required": ["apiKey", "authToken", "projectID"],
+          "properties": {
+            "apiKey":    { "type": "string", "minLength": 1 },
+            "authToken": { "type": "string", "minLength": 1 },
+            "projectID": { "type": ["string", "integer"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "Existing Secret",
+      "required": ["existingSecret"],
+      "properties": {
+        "existingSecret": { "type": "string", "minLength": 1 }
+      }
+    }
+  ],
+  "properties": {
+    "e2e": {
+      "type": "object",
+      "description": "E2E Networks credentials and project. Either fill these or set existingSecret.",
+      "properties": {
+        "apiKey": {
+          "type": "string",
+          "description": "UUID-format API key from MyAccount → API."
+        },
+        "authToken": {
+          "type": "string",
+          "description": "JWT auth token from MyAccount → API."
+        },
+        "projectID": {
+          "type": ["string", "integer"],
+          "description": "Numeric project ID (e.g. 50198). Visible in localStorage.currentProject in the MyAccount UI."
+        },
+        "location": {
+          "type": "string",
+          "description": "E2E region for the block-storage API.",
+          "default": "Delhi"
+        }
+      },
+      "additionalProperties": false
+    },
+    "existingSecret": {
+      "type": "string",
+      "description": "Name of an existing Secret carrying keys apiKey, authToken, projectID. Takes precedence over inline e2e.* values when set."
+    },
+    "image": {
+      "type": "object",
+      "description": "CSI driver image (controller + node plugin share this binary).",
+      "required": ["repository", "tag", "pullPolicy"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "Container image repository.",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "description": "Image tag. Defaults to latest; pin to a numeric version (e.g. 0.1.5) for reproducible deploys.",
+          "minLength": 1
+        },
+        "pullPolicy": {
+          "type": "string",
+          "description": "imagePullPolicy applied to both controller and node pods.",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "description": "List of Secret references used to pull the driver image.",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "nodeSelector": {
+      "type": "object",
+      "description": "nodeSelector applied to the Node plugin DaemonSet. Use to restrict to E2E VMs.",
+      "additionalProperties": { "type": "string" }
+    },
+    "sidecars": {
+      "type": "object",
+      "description": "Sidecar container images (registry.k8s.io/sig-storage/*).",
+      "required": ["provisioner", "attacher", "nodeDriverRegistrar", "livenessprobe"],
+      "properties": {
+        "provisioner":         { "$ref": "#/definitions/sidecarImage" },
+        "attacher":            { "$ref": "#/definitions/sidecarImage" },
+        "nodeDriverRegistrar": { "$ref": "#/definitions/sidecarImage" },
+        "livenessprobe":       { "$ref": "#/definitions/sidecarImage" }
+      },
+      "additionalProperties": false
+    },
+    "storageClass": {
+      "type": "object",
+      "description": "StorageClass shipped by default. Set create=false to skip.",
+      "required": ["create"],
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Render the StorageClass.",
+          "default": true
+        },
+        "name": {
+          "type": "string",
+          "description": "StorageClass metadata.name.",
+          "minLength": 1
+        },
+        "default": {
+          "type": "boolean",
+          "description": "Mark this StorageClass as the cluster default (storageclass.kubernetes.io/is-default-class).",
+          "default": false
+        },
+        "reclaimPolicy": {
+          "type": "string",
+          "description": "PV reclaim policy.",
+          "enum": ["Delete", "Retain"],
+          "default": "Delete"
+        },
+        "parameters": {
+          "type": "object",
+          "description": "StorageClass parameters passed to CreateVolume.",
+          "properties": {
+            "fsType": {
+              "type": "string",
+              "description": "Filesystem to format new volumes with.",
+              "enum": ["ext4", "xfs"],
+              "default": "ext4"
+            },
+            "iops": {
+              "type": "string",
+              "description": "IOPS hint sent to E2E. 1500 ≈ 100 GB tier; bump proportionally for larger volumes.",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          "additionalProperties": { "type": "string" }
+        },
+        "allowVolumeExpansion": {
+          "type": "boolean",
+          "description": "Whether the StorageClass advertises volume expansion. The driver does not implement ControllerExpandVolume yet — leave false until it does.",
+          "default": false
+        },
+        "mountOptions": {
+          "type": "array",
+          "description": "Mount options applied at NodeStage.",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "nodePlugin": {
+      "$ref": "#/definitions/podSpec",
+      "description": "Resource requests/limits for the Node plugin container."
+    },
+    "controllerPlugin": {
+      "allOf": [{ "$ref": "#/definitions/podSpec" }],
+      "description": "Resource requests/limits and replica count for the Controller deployment.",
+      "properties": {
+        "replicaCount": {
+          "type": "integer",
+          "description": "Controller replicas. Increase for HA (leader election handles the active/standby split).",
+          "minimum": 1,
+          "default": 1
+        }
+      }
+    },
+    "kubeletDir": {
+      "type": "string",
+      "description": "Kubelet root path. Override only if your distro does not use /var/lib/kubelet (e.g. /var/snap/microk8s/common/var/lib/kubelet).",
+      "default": "/var/lib/kubelet",
+      "pattern": "^/.*"
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "sidecarImage": {
+      "type": "object",
+      "required": ["image"],
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Fully-qualified sidecar image reference.",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "podSpec": {
+      "type": "object",
+      "properties": {
+        "resources": {
+          "type": "object",
+          "description": "Container resource requests/limits.",
+          "properties": {
+            "requests": { "$ref": "#/definitions/resourceList" },
+            "limits":   { "$ref": "#/definitions/resourceList" }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "resourceList": {
+      "type": "object",
+      "properties": {
+        "cpu":    { "type": ["string", "number"] },
+        "memory": { "type": "string" }
+      },
+      "additionalProperties": { "type": ["string", "number"] }
+    }
+  }
+}
