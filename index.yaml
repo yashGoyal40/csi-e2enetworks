@@ -4,6 +4,8 @@ entries:
   - annotations:
       artifacthub.io/category: storage
       artifacthub.io/changes: |
+        - kind: added
+          description: values.schema.json — Helm now validates user values on install/upgrade/template/lint, and ArtifactHub renders the schema panel on the chart page. Enforces anyOf(inline e2e creds OR existingSecret), enum constraints on image.pullPolicy / storageClass.reclaimPolicy / storageClass.parameters.fsType, and integer-string IOPS.
         - kind: fixed
           description: NodeStageVolume now identifies the freshly attached disk by picking the unmounted virtio device with the highest diskseq, instead of diffing /sys/block before/after a PCI rescan. The diff approach was racy — by the time NodeStage runs, the device is often already enumerated by the kernel, so the diff returned empty and the driver gave up with "no new block device appeared within 30s after attach". Reads /host/proc/1/mounts (host PID-1's mount NS) to identify which devices are already in use.
         - kind: fixed
@@ -45,10 +47,10 @@ entries:
           url: https://www.e2enetworks.com
     apiVersion: v2
     appVersion: 0.1.5
-    created: "2026-05-07T06:58:09.47604416Z"
+    created: "2026-05-07T07:10:54.591906133Z"
     description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
       on self-managed Kubernetes clusters running on E2E VMs.
-    digest: dd7feaef5b0602180596325329651d527d3b36c5074aa05a5e77f79654621502
+    digest: ffddb7a752a97679dea008edf1b9111d7db12ee88c68572ba1bbc4e284fb1546
     home: https://github.com/yashGoyal40/csi-e2enetworks
     icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
     keywords:
@@ -66,6 +68,6 @@ entries:
     - https://github.com/yashGoyal40/csi-e2enetworks
     type: application
     urls:
-    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.6.tgz
-    version: 0.1.6
-generated: "2026-05-07T06:58:09.475173197Z"
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.7.tgz
+    version: 0.1.7
+generated: "2026-05-07T07:10:54.590985798Z"
