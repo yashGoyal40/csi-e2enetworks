@@ -5,6 +5,10 @@ entries:
       artifacthub.io/category: storage
       artifacthub.io/changes: |
         - kind: fixed
+          description: NodeStageVolume now identifies the freshly attached disk by picking the unmounted virtio device with the highest diskseq, instead of diffing /sys/block before/after a PCI rescan. The diff approach was racy — by the time NodeStage runs, the device is often already enumerated by the kernel, so the diff returned empty and the driver gave up with "no new block device appeared within 30s after attach". Reads /host/proc/1/mounts (host PID-1's mount NS) to identify which devices are already in use.
+        - kind: fixed
+          description: NodeStageVolume is now idempotent — if the staging path is already mounted, returns success instead of re-running device discovery
+        - kind: fixed
           description: DetachVolume now considers "attached to a different VM" as success for the requested target VM. CSI sometimes leaves a stale per-node VolumeAttachment after a cross-node move; reconciling that VA was waiting for status=Available which never arrives because the volume is happily attached elsewhere, leaving the PV in a permanent Released state with detach errors.
         - kind: fixed
           description: DetachVolume treats HTTP 412 "Disk is not attached to vm" as success (CSI retries detach idempotently; the old behavior wedged VolumeAttachment objects on cross-node move)
@@ -30,7 +34,7 @@ entries:
           description: Single-binary controller + node plugin
         - kind: added
           description: Helm chart with controller Deployment, node DaemonSet, RBAC, CSIDriver, StorageClass
-      artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.4
+      artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.5
       artifacthub.io/license: Apache-2.0
       artifacthub.io/links: |
         - name: source
@@ -40,11 +44,11 @@ entries:
         - name: e2e networks
           url: https://www.e2enetworks.com
     apiVersion: v2
-    appVersion: 0.1.4
-    created: "2026-05-06T13:28:51.451085037Z"
+    appVersion: 0.1.5
+    created: "2026-05-07T06:58:09.47604416Z"
     description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
       on self-managed Kubernetes clusters running on E2E VMs.
-    digest: 9a99d34330ae3e163233476a291c082f1fcb3e8e2229eb43d5b996c13718e874
+    digest: dd7feaef5b0602180596325329651d527d3b36c5074aa05a5e77f79654621502
     home: https://github.com/yashGoyal40/csi-e2enetworks
     icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
     keywords:
@@ -62,6 +66,6 @@ entries:
     - https://github.com/yashGoyal40/csi-e2enetworks
     type: application
     urls:
-    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.5.tgz
-    version: 0.1.5
-generated: "2026-05-06T13:28:51.450253698Z"
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.6.tgz
+    version: 0.1.6
+generated: "2026-05-07T06:58:09.475173197Z"
