@@ -16,6 +16,7 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/klog/v2"
 	mountutils "k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
 
@@ -25,7 +26,7 @@ import (
 const (
 	// PluginName is the CSI driver name; storage classes reference this.
 	PluginName = "csi.e2enetworks.com"
-	Version    = "0.1.4"
+	Version    = "0.1.5"
 
 	minVolumeBytes = 100 * 1024 * 1024 * 1024 // 100 GB minimum tier on E2E
 	defaultFSType  = "ext4"
@@ -36,6 +37,13 @@ const (
 	// the real /sys lives at /host/sys inside the pod and works reliably.
 	sysBlockDir   = "/host/sys/block"
 	pciRescanFile = "/host/sys/bus/pci/rescan"
+	// We want the host's mount table, not the container's. Because the
+	// DaemonSet runs with hostPID=true, /proc/1 is host PID 1 (init), and
+	// procfs renders /proc/<pid>/mounts in that PID's mount namespace —
+	// which for PID 1 is the host root mount NS. /host/proc/mounts (the
+	// hostPath bind of /proc) instead resolves to the container's own
+	// /proc/self/mounts and is useless for our purpose.
+	procMountsTxt = "/host/proc/1/mounts"
 )
 
 // Driver bundles all three CSI servers behind a single struct.
@@ -328,33 +336,39 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "StagingTargetPath required")
 	}
 
-	// Pre-attach snapshot of /sys/block (used to identify the new device after rescan).
-	pre, err := snapshotBlockDevs()
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "block snapshot: %v", err)
+	// If the staging path already has our fs mounted, treat as success (idempotent).
+	if mounted, _ := isStagingMounted(req.StagingTargetPath); mounted {
+		klog.V(2).Infof("NodeStageVolume: %s already mounted at %s, returning success", req.VolumeId, req.StagingTargetPath)
+		return &csi.NodeStageVolumeResponse{}, nil
 	}
 
-	// Force PCI rescan in case kubelet got us here without one.
+	// ControllerPublishVolume already attached the disk on the hypervisor side.
+	// We just need to identify *which* /dev/vdX is ours. The previous diff
+	// approach (pre/post snapshot of /sys/block) was racy — by the time
+	// NodeStage runs the device is often already visible, so the diff was
+	// empty. Instead: pick the unmounted virtio/SCSI disk with the highest
+	// diskseq (kernel-monotonic), which is reliably the most recently attached.
 	_ = os.WriteFile(pciRescanFile, []byte("1"), 0)
 
-	// Wait for a new device. Up to 30 s.
 	deadline := time.Now().Add(30 * time.Second)
 	var devPath string
+	var lastErr error
 	for time.Now().Before(deadline) {
-		post, err := snapshotBlockDevs()
+		cand, err := pickFreshBlockDev()
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "block snapshot: %v", err)
-		}
-		if d := newestNew(pre, post); d != "" {
-			devPath = "/dev/" + d
+			lastErr = err
+		} else if cand != "" {
+			devPath = "/dev/" + cand
 			break
 		}
 		_ = os.WriteFile(pciRescanFile, []byte("1"), 0)
 		time.Sleep(1 * time.Second)
 	}
 	if devPath == "" {
-		return nil, status.Error(codes.Aborted, "no new block device appeared within 30s after attach")
+		klog.Warningf("NodeStageVolume: no candidate device for %s (lastErr=%v)", req.VolumeId, lastErr)
+		return nil, status.Errorf(codes.Aborted, "no candidate block device for volume %s within 30s (lastErr=%v)", req.VolumeId, lastErr)
 	}
+	klog.V(2).Infof("NodeStageVolume: picked %s for volume %s", devPath, req.VolumeId)
 
 	if err := os.MkdirAll(req.StagingTargetPath, 0750); err != nil {
 		return nil, status.Errorf(codes.Internal, "mkdir staging: %v", err)
@@ -412,46 +426,104 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 
 // ===== helpers ================================================================
 
-// snapshotBlockDevs returns the set of block-device names under /sys/block.
-// We only care about ones whose names start with vd or sd (real disks).
-func snapshotBlockDevs() (map[string]uint64, error) {
+// isStagingMounted returns true if path is currently a mount point for any fs.
+// Uses /host/proc/mounts so it sees the host's view, not the container's.
+func isStagingMounted(path string) (bool, error) {
+	b, err := os.ReadFile(procMountsTxt)
+	if err != nil {
+		// Fall back to mount-utils' own check.
+		notMounted, errC := mountutils.New("").IsLikelyNotMountPoint(path)
+		if errC != nil {
+			return false, errC
+		}
+		return !notMounted, nil
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if fields[1] == path {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// pickFreshBlockDev returns the name (e.g. "vdc") of the virtio/SCSI block
+// device with the highest diskseq among devices that are NOT currently
+// mounted (anywhere). Returns "" if no candidate exists.
+//
+// Rationale: the e2e API doesn't expose a stable serial we can correlate to
+// /dev/disk/by-id, so we identify "our" volume by recency. diskseq is a
+// monotonically incrementing kernel counter set when the block device is
+// registered — a freshly attached disk always has the highest diskseq among
+// virtio devices. We exclude already-mounted disks so we don't try to claim
+// the root disk or another volume that's already staged.
+func pickFreshBlockDev() (string, error) {
+	mounted, err := mountedSourceDevs()
+	if err != nil {
+		return "", err
+	}
 	ents, err := os.ReadDir(sysBlockDir)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	out := map[string]uint64{}
+	type item struct {
+		name string
+		seq  uint64
+	}
+	var cands []item
 	for _, e := range ents {
 		n := e.Name()
 		if !strings.HasPrefix(n, "vd") && !strings.HasPrefix(n, "sd") {
+			continue
+		}
+		// Exclude disks any of whose partitions OR the disk itself is mounted.
+		if mounted["/dev/"+n] {
+			continue
+		}
+		hasMountedChild := false
+		for src := range mounted {
+			if strings.HasPrefix(src, "/dev/"+n) && src != "/dev/"+n {
+				hasMountedChild = true
+				break
+			}
+		}
+		if hasMountedChild {
 			continue
 		}
 		seq, err := readUint64(filepath.Join(sysBlockDir, n, "diskseq"))
 		if err != nil {
 			seq = 0
 		}
-		out[n] = seq
+		cands = append(cands, item{n, seq})
 	}
-	return out, nil
+	if len(cands) == 0 {
+		return "", nil
+	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].seq > cands[j].seq })
+	return cands[0].name, nil
 }
 
-// newestNew returns the post-set name with the highest diskseq among entries
-// that aren't in pre. Empty if no new device.
-func newestNew(pre, post map[string]uint64) string {
-	type item struct {
-		name string
-		seq  uint64
+// mountedSourceDevs returns the set of source devices currently mounted
+// (first column of /host/proc/mounts), filtered to /dev/* entries.
+func mountedSourceDevs() (map[string]bool, error) {
+	b, err := os.ReadFile(procMountsTxt)
+	if err != nil {
+		return nil, err
 	}
-	var diff []item
-	for n, s := range post {
-		if _, had := pre[n]; !had {
-			diff = append(diff, item{n, s})
+	out := map[string]bool{}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if strings.HasPrefix(fields[0], "/dev/") {
+			out[fields[0]] = true
 		}
 	}
-	if len(diff) == 0 {
-		return ""
-	}
-	sort.Slice(diff, func(i, j int) bool { return diff[i].seq > diff[j].seq })
-	return diff[0].name
+	return out, nil
 }
 
 func readUint64(path string) (uint64, error) {
