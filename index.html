@@ -40,12 +40,7 @@
 <p>Container Storage Interface (CSI) driver for <strong>E2E Networks block storage</strong>.<br />
 Lets you create <code>PersistentVolumeClaim</code>s in self-managed Kubernetes clusters<br />
 running on E2E Networks VMs and have them backed by real E2E block volumes<br />
-(provisioned, attached, formatted, and mounted automatically).</p>
-<blockquote>
-<p><strong>Status: 0.1 alpha.</strong> API client is end-to-end verified against the live<br />
-E2E API. Full in-cluster CSI flow has been built and Helm-packaged but the<br />
-first cluster install of the published chart is still outstanding.</p>
-</blockquote>
+(provisioned, attached, formatted, mounted, and resized automatically).</p>
 <h2>What it does</h2>
 <table>
 <thead>
@@ -66,6 +61,10 @@ first cluster install of the published chart is still outstanding.</p>
 <tr>
 <td>Pod moves to another node</td>
 <td>Detaches from the old node, re-attaches on the new one</td>
+</tr>
+<tr>
+<td>Edit PVC <code>spec.resources.requests.storage</code></td>
+<td><code>PUT /block_storage/{id}/vm/upgrade/</code> to grow the E2E volume, then <code>resize2fs</code>/<code>xfs_growfs</code> on the node — all online, no pod restart</td>
 </tr>
 <tr>
 <td><code>kubectl delete pvc</code></td>
@@ -110,7 +109,7 @@ storageClass:
 <li><code>CSIDriver/csi.e2enetworks.com</code>.</li>
 <li><code>Deployment/csi-e2enetworks-controller</code> with the controller plugin + sidecars (<code>csi-provisioner</code>, <code>csi-attacher</code>, <code>csi-resizer</code>).</li>
 <li><code>DaemonSet/csi-e2enetworks-node</code> running on every node (privileged, with <code>node-driver-registrar</code>).</li>
-<li><code>StorageClass/e2e-block</code>.</li>
+<li><code>StorageClass/e2e-block</code> (with <code>allowVolumeExpansion: true</code>).</li>
 </ul>
 <h2>Where the credentials come from</h2>
 <table>
@@ -167,11 +166,13 @@ kubectl exec writer -- cat /data/log.txt
 <pre><code>controller plugin (Deployment, 1 replica)             node plugin (DaemonSet, 1/node)
 ┌──────────────────────────────────────┐              ┌────────────────────────────────┐
 │ csi-driver --mode=controller         │              │ csi-driver --mode=node         │
-│   CreateVolume    →  POST .../       │              │   NodeStageVolume   → diff     │
-│   DeleteVolume    →  DELETE          │              │     /sys/block, format,        │
-│   ControllerPublishVolume → PUT      │              │     mount to staging dir       │
+│   CreateVolume    →  POST .../       │              │   NodeStageVolume   → diskseq  │
+│   DeleteVolume    →  DELETE          │              │     pick, format, mount        │
+│   ControllerPublishVolume → PUT      │              │     to staging dir             │
 │   ControllerUnpublishVolume → PUT    │              │   NodePublishVolume → bind     │
-│                                      │              │     mount staging → pod        │
+│   ControllerExpandVolume → PUT       │              │     mount staging → pod        │
+│     .../vm/upgrade/                  │              │   NodeExpandVolume  → resize2fs│
+│                                      │              │     /xfs_growfs                │
 │ csi-provisioner (sidecar)            │              │ node-driver-registrar (sidecar)│
 │ csi-attacher    (sidecar)            │              │                                │
 │ csi-resizer     (sidecar)            │              │ privileged + hostPath /dev/sys │
@@ -242,8 +243,13 @@ pages on rapid PUT, status eventual-consistency on detach).</p>
 </tr>
 <tr>
 <td><code>image.tag</code></td>
-<td><code>0.1.0</code></td>
-<td></td>
+<td><code>latest</code></td>
+<td>Pin to a numeric tag (e.g. <code>0.1.6</code>) for reproducible deploys</td>
+</tr>
+<tr>
+<td><code>image.pullPolicy</code></td>
+<td><code>Always</code></td>
+<td>Set to <code>IfNotPresent</code> once <code>image.tag</code> is pinned</td>
 </tr>
 <tr>
 <td><code>storageClass.create</code></td>
@@ -278,7 +284,7 @@ pages on rapid PUT, status eventual-consistency on detach).</p>
 <tr>
 <td><code>storageClass.allowVolumeExpansion</code></td>
 <td><code>true</code></td>
-<td></td>
+<td>Online resize via <code>PUT /block_storage/{id}/vm/upgrade/</code></td>
 </tr>
 <tr>
 <td><code>nodeSelector</code></td>
@@ -336,9 +342,21 @@ the chart on every push to <code>main</code> that touches <code>chart/**</code> 
 publishes the <code>.tgz</code> + <code>index.yaml</code> to <code>gh-pages</code>, and renders this README<br />
 as the repo landing page.</p>
 <hr />
+<h2>Resizing a PVC</h2>
+<pre><code class="language-bash">kubectl patch pvc data --type=merge \
+  -p '{&quot;spec&quot;:{&quot;resources&quot;:{&quot;requests&quot;:{&quot;storage&quot;:&quot;200Gi&quot;}}}}'
+</code></pre>
+<p>The csi-resizer sidecar issues <code>ControllerExpandVolume</code>, the driver calls<br />
+E2E's <code>PUT /block_storage/{id}/vm/upgrade/</code>, then kubelet's call into<br />
+<code>NodeExpandVolume</code> runs <code>resize2fs</code>/<code>xfs_growfs</code> on the mounted device.<br />
+All online — the pod keeps running. PVC capacity goes through<br />
+<code>Resizing</code> → <code>FileSystemResizePending</code> → settled in ~30s on a steady-state<br />
+VM (longer if the volume was attached within the last minute, since the<br />
+underlying OpenNebula VM stays in <code>HOTPLUG</code> state for a short window after<br />
+attach and the driver retries during that period).</p>
+<p>E2E's smallest tier is 100 GB and sizes scale in 100 GB increments.</p>
 <h2>Known gaps / TODO</h2>
 <ul>
-<li>[ ] <strong>Resize</strong> (<code>/upgrade/</code>) — driver advertises the capability but the API endpoint is not yet wired through.</li>
 <li>[ ] <strong>Snapshots</strong> — not implemented.</li>
 <li>[ ] <strong>JWT auto-refresh</strong> — current setup uses a long-lived JWT (≈2 years). Replace with a refresh-on-401 flow before that expires.</li>
 </ul>

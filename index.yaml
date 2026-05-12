@@ -5,6 +5,10 @@ entries:
       artifacthub.io/category: storage
       artifacthub.io/changes: |
         - kind: added
+          description: Online volume resize. ControllerExpandVolume calls E2E's PUT /block_storage/{id}/vm/upgrade/ (the API E2E enabled for us in May 2026); NodeExpandVolume grows ext4/xfs in-place via mount-utils. csi-resizer sidecar is back in the controller Deployment with --handle-volume-inuse-error=false (online resize) and --timeout=120s (covers the ~15-20s OpenNebula resize lag, plus HOTPLUG retry on freshly-attached volumes). RBAC adds pods get/list/watch for csi-resizer.
+        - kind: changed
+          description: storageClass.allowVolumeExpansion default flipped back to true now that resize is implemented. Existing installs unaffected — Kubernetes lets you flip allowVolumeExpansion on a StorageClass at any time.
+        - kind: added
           description: values.schema.json — Helm now validates user values on install/upgrade/template/lint, and ArtifactHub renders the schema panel on the chart page. Enforces anyOf(inline e2e creds OR existingSecret), enum constraints on image.pullPolicy / storageClass.reclaimPolicy / storageClass.parameters.fsType, and integer-string IOPS.
         - kind: fixed
           description: NodeStageVolume now identifies the freshly attached disk by picking the unmounted virtio device with the highest diskseq, instead of diffing /sys/block before/after a PCI rescan. The diff approach was racy — by the time NodeStage runs, the device is often already enumerated by the kernel, so the diff returned empty and the driver gave up with "no new block device appeared within 30s after attach". Reads /host/proc/1/mounts (host PID-1's mount NS) to identify which devices are already in use.
@@ -36,7 +40,7 @@ entries:
           description: Single-binary controller + node plugin
         - kind: added
           description: Helm chart with controller Deployment, node DaemonSet, RBAC, CSIDriver, StorageClass
-      artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.5
+      artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.6
       artifacthub.io/license: Apache-2.0
       artifacthub.io/links: |
         - name: source
@@ -46,11 +50,11 @@ entries:
         - name: e2e networks
           url: https://www.e2enetworks.com
     apiVersion: v2
-    appVersion: 0.1.5
-    created: "2026-05-07T07:10:54.591906133Z"
+    appVersion: 0.1.6
+    created: "2026-05-12T07:44:03.786790985Z"
     description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
       on self-managed Kubernetes clusters running on E2E VMs.
-    digest: ffddb7a752a97679dea008edf1b9111d7db12ee88c68572ba1bbc4e284fb1546
+    digest: b0c8310b97077a61ceed3e3c4e093016fd2426f7abc3b2f7b25437f357314a33
     home: https://github.com/yashGoyal40/csi-e2enetworks
     icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
     keywords:
@@ -68,6 +72,6 @@ entries:
     - https://github.com/yashGoyal40/csi-e2enetworks
     type: application
     urls:
-    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.7.tgz
-    version: 0.1.7
-generated: "2026-05-07T07:10:54.590985798Z"
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.8.tgz
+    version: 0.1.8
+generated: "2026-05-12T07:44:03.785902582Z"
