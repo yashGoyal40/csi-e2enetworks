@@ -172,9 +172,44 @@ Minimum size is 100 GB. The CSI driver should round all PVC requests up to
 }
 ```
 
+## Resize (`/vm/upgrade/`)
+
+E2E enabled the upgrade endpoint for this account in May 2026. Probed against
+the live API and wired through CSI as ControllerExpandVolume + NodeExpandVolume.
+
+```
+PUT /myaccount/api/v1/block_storage/{id}/vm/upgrade/?apikey=&project_id=&location=Delhi
+{
+  "vm_id":              <int>,    // current vm_id from vm_detail.vm_id
+  "block_storage_size": <int_GB>, // new size (decimal GB, in 100 GB steps)
+  "name":               "<str>"   // must be the volume's current name
+}
+```
+
+Findings:
+
+- **`vm_id` is an int**, despite the support doc showing it quoted as a string.
+  Mirrors `/vm/attach/` payload shape.
+- **Volume must be attached**; no offline-resize path. The driver returns
+  FailedPrecondition if `status != Attached`.
+- **`bs_size` flips immediately** to the new GB value on the GET response.
+  **`size` (MiB) lags ~15-20s** while the OpenNebula resize actually runs.
+  Poll on `size > pre_upgrade_size` for the "settled" signal.
+- **HOTPLUG transient**: a PUT issued in the first ~30-60s after attach
+  returns HTTP 500 with `data: "[one.vm.diskresize] Could not resize disk for
+  VM <id>, wrong state HOTPLUG."` — the underlying VM hasn't transitioned out
+  of HOTPLUG. The client retries that error for up to 90s. Real-world resize
+  on a long-running PVC never hits this.
+- **Error envelope quirk**: on 500 from the OpenNebula-backed paths the
+  meaningful error string lives in `data` (envelope `errors={}`, `message`
+  is just "Internal Server Error"). The client now surfaces all three.
+- **Decimal-GB math**: a 200 GB allocation reports `size=190735` MiB
+  (= 200 × 10⁹ / 2²⁰), i.e. ~186.3 GiB. CSI capacity comparisons therefore
+  must be in decimal GB, not bytes — a 200 Gi PVC request maps to a 200 GB
+  decimal E2E allocation.
+
 ## Open questions / TODO
 
-- [ ] Test resize (`/upgrade/`?) — not yet probed
 - [ ] Test snapshot create/list/delete — not yet probed
 - [ ] Confirm whether the API returns the PCI slot anywhere. If not, the
       lsblk-diff approach is the only path.
