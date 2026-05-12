@@ -95,10 +95,39 @@ jobs:
       - name: Sync README.md into chart
         run: cp README.md chart/README.md
 
-      - name: Package Helm Chart
+      # Import the chart-signing private key into a temp keyring. The secret
+      # holds a base64-encoded classic-format gpg secring (gpg --export-secret-keys)
+      # — helm needs the legacy keyring format, not the modern keybox.
+      - name: Import Helm signing key
+        env:
+          HELM_SIGNING_KEY_B64: ${{ secrets.HELM_SIGNING_KEY }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/helm-signing"
+          chmod 700 "${RUNNER_TEMP}/helm-signing"
+          echo "$HELM_SIGNING_KEY_B64" | base64 -d > "${RUNNER_TEMP}/helm-signing/secring.gpg"
+          # Sanity check
+          gpg --list-packets "${RUNNER_TEMP}/helm-signing/secring.gpg" >/dev/null
+          echo "HELM_KEYRING=${RUNNER_TEMP}/helm-signing/secring.gpg" >> "$GITHUB_ENV"
+
+      # helm package --sign writes both <chart>-<ver>.tgz and <chart>-<ver>.tgz.prov.
+      # The .prov is a signed manifest that Artifact Hub (and `helm install --verify`)
+      # uses to validate the chart hasn't been tampered with.
+      - name: Package Helm Chart (signed)
+        env:
+          HELM_KEY_NAME: ${{ secrets.HELM_SIGNING_KEY_NAME }}
         run: |
           mkdir -p ./pages
-          helm package chart --destination ./pages
+          helm package chart \
+            --destination ./pages \
+            --sign \
+            --key "$HELM_KEY_NAME" \
+            --keyring "$HELM_KEYRING"
+          ls -la ./pages/
+
+      # Publish the public key alongside the chart so consumers (and Artifact Hub
+      # via the chart's artifacthub.io/signKey annotation) can verify provenance.
+      - name: Publish signing public key
+        run: cp chart/key.gpg ./pages/key.gpg
 
       - name: Generate Index
         run: |
@@ -185,6 +214,7 @@ jobs:
           APP_VERSION=$(awk '/^appVersion:/{gsub(/"/,"",$2); print $2}' chart/Chart.yaml)
           TAG="v${VERSION}"
           TGZ="./pages/csi-e2enetworks-${VERSION}.tgz"
+          PROV="./pages/csi-e2enetworks-${VERSION}.tgz.prov"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; nothing to do."
@@ -212,6 +242,10 @@ jobs:
           See [README](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/README.md) for full options.
           EOF
 
-          gh release create "$TAG" "$TGZ" \
+          # Attach the signed bundle: chart .tgz + .tgz.prov (provenance/signature).
+          # Both are also available via the Helm repo URL, but having them on the
+          # Release page makes verification easy: `helm verify <tgz>` works once
+          # the public key (chart/key.gpg, served at /key.gpg) is imported.
+          gh release create "$TAG" "$TGZ" "$PROV" \
             --title "csi-e2enetworks ${VERSION}" \
             --notes-file "$NOTES_FILE"

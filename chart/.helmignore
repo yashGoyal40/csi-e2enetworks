@@ -25,3 +25,6 @@
 # Artifact Hub repo config — must live in the repo root for the index, not in
 # every packaged chart.
 artifacthub-repo.yml
+# Helm signing public key — published to GH Pages as /key.gpg for Artifact Hub
+# to fetch (per artifacthub.io/signKey), but not needed inside the chart .tgz.
+key.gpg
