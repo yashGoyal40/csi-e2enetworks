@@ -26,7 +26,7 @@ import (
 const (
 	// PluginName is the CSI driver name; storage classes reference this.
 	PluginName = "csi.e2enetworks.com"
-	Version    = "0.1.5"
+	Version    = "0.1.6"
 
 	minVolumeBytes = 100 * 1024 * 1024 * 1024 // 100 GB minimum tier on E2E
 	defaultFSType  = "ext4"
@@ -102,6 +102,7 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, _ *csi.Controlle
 		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
 		csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
+		csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 	}
 	out := make([]*csi.ControllerServiceCapability, 0, len(caps))
 	for _, c := range caps {
@@ -285,6 +286,85 @@ func (d *Driver) ListVolumes(ctx context.Context, _ *csi.ListVolumesRequest) (*c
 	return &csi.ListVolumesResponse{Entries: out}, nil
 }
 
+// ControllerExpandVolume issues a PUT /block_storage/{id}/vm/upgrade/ to
+// resize the underlying E2E volume. The E2E endpoint requires the volume to
+// be attached (it takes a vm_id as part of the payload) — there is no
+// offline-resize path, so we fail FailedPrecondition if the volume isn't
+// currently attached.
+//
+// Sets NodeExpansionRequired=true so kubelet then calls NodeExpandVolume to
+// grow the filesystem on top.
+func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+	volID, err := strconv.Atoi(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "VolumeId must be an integer")
+	}
+	required := int64(minVolumeBytes)
+	if r := req.GetCapacityRange(); r != nil {
+		if r.RequiredBytes > required {
+			required = r.RequiredBytes
+		}
+		if r.LimitBytes > 0 && r.LimitBytes < required {
+			return nil, status.Errorf(codes.OutOfRange, "limit %d < required %d", r.LimitBytes, required)
+		}
+	}
+	newGB := int((required + (1 << 30) - 1) >> 30)
+	if newGB < 100 {
+		newGB = 100
+	}
+
+	v, err := d.api.GetVolume(ctx, volID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get volume: %v", err)
+	}
+	// E2E sizes are decimal GB internally: a 100 GB volume reports
+	// size=95368 MiB (= 100 * 10^9 / 2^20). So a PVC request of "200Gi"
+	// (required=200*2^30 bytes ≈ 214.7 GB) maps to an E2E allocation of
+	// 200 GB decimal = ~190735 MiB. The "current size satisfies the
+	// request" check therefore compares in *decimal GB*, not bytes — using
+	// raw bytes would never short-circuit, since 200 GB decimal < 200 GiB
+	// always.
+	curGB := int((int64(v.SizeMiB)*(1<<20) + 999_999_999) / 1_000_000_000) // ceil to decimal GB
+	if curGB >= newGB {
+		return &csi.ControllerExpandVolumeResponse{
+			CapacityBytes:         int64(newGB) * (1 << 30),
+			NodeExpansionRequired: true,
+		}, nil
+	}
+	if v.Status != "Attached" || v.VMDetail.VMID == 0 {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"E2E /vm/upgrade/ requires the volume to be attached to a VM (status=%s, vm_id=%d)",
+			v.Status, v.VMDetail.VMID)
+	}
+	preSize := v.SizeMiB
+
+	if err := d.api.UpgradeVolume(ctx, volID, v.VMDetail.VMID, newGB, v.Name); err != nil {
+		return nil, status.Errorf(codes.Internal, "upgrade: %v", err)
+	}
+
+	// Poll until GET /block_storage/{id}/ reports a size larger than what
+	// we had pre-upgrade — that's the signal that the OpenNebula resize has
+	// actually applied (the bs_size field flips immediately on PUT, but the
+	// size field lags ~15-20s while the disk is being grown). Status stays
+	// Attached throughout.
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := d.api.GetVolume(ctx, volID)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "post-upgrade poll: %v", err)
+		}
+		if got.SizeMiB > preSize {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	return &csi.ControllerExpandVolumeResponse{
+		CapacityBytes:         int64(newGB) * (1 << 30),
+		NodeExpansionRequired: true,
+	}, nil
+}
+
 // lookupVMID resolves a node IP to the block-storage vm_id, with caching.
 // Pass anyVolumeID = a volume id (since EligibleVMs is per-volume but the
 // list is identical across volumes in the same project).
@@ -311,6 +391,7 @@ func (d *Driver) lookupVMID(ctx context.Context, anyVolumeID int, nodeIP string)
 func (d *Driver) NodeGetCapabilities(ctx context.Context, _ *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 	caps := []csi.NodeServiceCapability_RPC_Type{
 		csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+		csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
 	}
 	out := make([]*csi.NodeServiceCapability, 0, len(caps))
 	for _, c := range caps {
@@ -424,6 +505,44 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
+// NodeExpandVolume grows the filesystem on top of an already-resized block
+// device. The controller has already resized the underlying E2E volume via
+// /vm/upgrade/; by the time kubelet calls us the kernel has typically seen
+// the new device size via the virtio-blk config-change interrupt. If not, we
+// trigger a sysfs rescan and let mount-utils.ResizeFs do the FS-level grow
+// (resize2fs for ext4, xfs_growfs for xfs).
+//
+// req.VolumePath is the published target — for FS-mode volumes this is a
+// bind mount of the staging directory, so the source device matches what
+// NodeStageVolume picked.
+func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
+	if req.VolumePath == "" {
+		return nil, status.Error(codes.InvalidArgument, "VolumePath required")
+	}
+	dev, err := deviceForMount(req.VolumePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "find device for %s: %v", req.VolumePath, err)
+	}
+	if dev == "" {
+		return nil, status.Errorf(codes.NotFound, "no device mounted at %s", req.VolumePath)
+	}
+
+	// Best-effort: poke the kernel to re-read device capacity. virtio-blk
+	// usually picks it up automatically via the config-change interrupt; this
+	// is the SCSI/edge-case fallback. Ignore errors — if the file doesn't
+	// exist, the kernel didn't need the hint.
+	base := filepath.Base(dev)
+	_ = os.WriteFile("/host/sys/block/"+base+"/device/rescan", []byte("1"), 0)
+
+	resizer := mountutils.NewResizeFs(utilexec.New())
+	if _, err := resizer.Resize(dev, req.VolumePath); err != nil {
+		return nil, status.Errorf(codes.Internal, "resize fs on %s at %s: %v", dev, req.VolumePath, err)
+	}
+	klog.V(2).Infof("NodeExpandVolume: resized %s on %s", req.VolumePath, dev)
+
+	return &csi.NodeExpandVolumeResponse{CapacityBytes: req.GetCapacityRange().GetRequiredBytes()}, nil
+}
+
 // ===== helpers ================================================================
 
 // isStagingMounted returns true if path is currently a mount point for any fs.
@@ -504,6 +623,32 @@ func pickFreshBlockDev() (string, error) {
 	}
 	sort.Slice(cands, func(i, j int) bool { return cands[i].seq > cands[j].seq })
 	return cands[0].name, nil
+}
+
+// deviceForMount returns the /dev/* source backing the given mount path.
+//
+// NodePublishVolume bind-mounts the staging dir into the pod target, so the
+// host's mount table shows the target with the same source device as the
+// staging mount. We read the host root NS via /host/proc/1/mounts (same
+// trick used by isStagingMounted / mountedSourceDevs).
+func deviceForMount(path string) (string, error) {
+	b, err := os.ReadFile(procMountsTxt)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if fields[1] != path {
+			continue
+		}
+		if strings.HasPrefix(fields[0], "/dev/") {
+			return fields[0], nil
+		}
+	}
+	return "", nil
 }
 
 // mountedSourceDevs returns the set of source devices currently mounted

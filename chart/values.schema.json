@@ -100,10 +100,11 @@
     "sidecars": {
       "type": "object",
       "description": "Sidecar container images (registry.k8s.io/sig-storage/*).",
-      "required": ["provisioner", "attacher", "nodeDriverRegistrar", "livenessprobe"],
+      "required": ["provisioner", "attacher", "resizer", "nodeDriverRegistrar", "livenessprobe"],
       "properties": {
         "provisioner":         { "$ref": "#/definitions/sidecarImage" },
         "attacher":            { "$ref": "#/definitions/sidecarImage" },
+        "resizer":             { "$ref": "#/definitions/sidecarImage" },
         "nodeDriverRegistrar": { "$ref": "#/definitions/sidecarImage" },
         "livenessprobe":       { "$ref": "#/definitions/sidecarImage" }
       },
@@ -155,8 +156,8 @@
         },
         "allowVolumeExpansion": {
           "type": "boolean",
-          "description": "Whether the StorageClass advertises volume expansion. The driver does not implement ControllerExpandVolume yet — leave false until it does.",
-          "default": false
+          "description": "Whether the StorageClass advertises volume expansion. The driver implements online resize against E2E's /vm/upgrade/ endpoint plus filesystem grow on the node.",
+          "default": true
         },
         "mountOptions": {
           "type": "array",

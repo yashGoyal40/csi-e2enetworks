@@ -43,6 +43,13 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
+  # csi-resizer reads Pods to decide whether a PVC is in use before issuing
+  # ControllerExpandVolume (it surfaces in-use state on PVC conditions; the
+  # --handle-volume-inuse-error=false flag means we still issue the expand,
+  # but the sidecar still needs to read pods to compute the condition).
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

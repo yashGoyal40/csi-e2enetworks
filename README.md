@@ -3,11 +3,7 @@
 Container Storage Interface (CSI) driver for **E2E Networks block storage**.
 Lets you create `PersistentVolumeClaim`s in self-managed Kubernetes clusters
 running on E2E Networks VMs and have them backed by real E2E block volumes
-(provisioned, attached, formatted, and mounted automatically).
-
-> **Status: 0.1 alpha.** API client is end-to-end verified against the live
-> E2E API. Full in-cluster CSI flow has been built and Helm-packaged but the
-> first cluster install of the published chart is still outstanding.
+(provisioned, attached, formatted, mounted, and resized automatically).
 
 ## What it does
 
@@ -16,6 +12,7 @@ running on E2E Networks VMs and have them backed by real E2E block volumes
 | `kubectl apply -f pvc.yaml`     | Calls `POST /block_storage/` → creates a 100 GB+ block volume |
 | Pod scheduled to a node         | Resolves the node's E2E `vm_id`, calls `PUT /block_storage/{id}/vm/attach/`, triggers PCI rescan, formats ext4/xfs, mounts into the pod |
 | Pod moves to another node       | Detaches from the old node, re-attaches on the new one |
+| Edit PVC `spec.resources.requests.storage` | `PUT /block_storage/{id}/vm/upgrade/` to grow the E2E volume, then `resize2fs`/`xfs_growfs` on the node — all online, no pod restart |
 | `kubectl delete pvc`            | Detaches, waits for `Available`, calls `DELETE /block_storage/{id}/` |
 
 `ReadWriteOnce` only (E2E PDs cannot be shared between VMs at once).
@@ -65,7 +62,7 @@ The chart will create:
 - `CSIDriver/csi.e2enetworks.com`.
 - `Deployment/csi-e2enetworks-controller` with the controller plugin + sidecars (`csi-provisioner`, `csi-attacher`, `csi-resizer`).
 - `DaemonSet/csi-e2enetworks-node` running on every node (privileged, with `node-driver-registrar`).
-- `StorageClass/e2e-block`.
+- `StorageClass/e2e-block` (with `allowVolumeExpansion: true`).
 
 ## Where the credentials come from
 
@@ -118,11 +115,13 @@ kubectl exec writer -- cat /data/log.txt
 controller plugin (Deployment, 1 replica)             node plugin (DaemonSet, 1/node)
 ┌──────────────────────────────────────┐              ┌────────────────────────────────┐
 │ csi-driver --mode=controller         │              │ csi-driver --mode=node         │
-│   CreateVolume    →  POST .../       │              │   NodeStageVolume   → diff     │
-│   DeleteVolume    →  DELETE          │              │     /sys/block, format,        │
-│   ControllerPublishVolume → PUT      │              │     mount to staging dir       │
+│   CreateVolume    →  POST .../       │              │   NodeStageVolume   → diskseq  │
+│   DeleteVolume    →  DELETE          │              │     pick, format, mount        │
+│   ControllerPublishVolume → PUT      │              │     to staging dir             │
 │   ControllerUnpublishVolume → PUT    │              │   NodePublishVolume → bind     │
-│                                      │              │     mount staging → pod        │
+│   ControllerExpandVolume → PUT       │              │     mount staging → pod        │
+│     .../vm/upgrade/                  │              │   NodeExpandVolume  → resize2fs│
+│                                      │              │     /xfs_growfs                │
 │ csi-provisioner (sidecar)            │              │ node-driver-registrar (sidecar)│
 │ csi-attacher    (sidecar)            │              │                                │
 │ csi-resizer     (sidecar)            │              │ privileged + hostPath /dev/sys │
@@ -166,14 +165,15 @@ pages on rapid PUT, status eventual-consistency on detach).
 | `e2e.location`                    | `Delhi`                              | E2E region |
 | `existingSecret`                  | *(empty)*                            | Use a Secret you manage; needs keys `apiKey`, `authToken`, `projectID` |
 | `image.repository`                | `yashgoyal04/csi-e2enetworks`        | Docker Hub public image |
-| `image.tag`                       | `0.1.0`                              | |
+| `image.tag`                       | `latest`                             | Pin to a numeric tag (e.g. `0.1.6`) for reproducible deploys |
+| `image.pullPolicy`                | `Always`                             | Set to `IfNotPresent` once `image.tag` is pinned |
 | `storageClass.create`             | `true`                               | |
 | `storageClass.name`               | `e2e-block`                          | |
 | `storageClass.default`            | `false`                              | Make this the cluster default |
 | `storageClass.reclaimPolicy`      | `Delete`                             | or `Retain` |
 | `storageClass.parameters.fsType`  | `ext4`                               | or `xfs` |
 | `storageClass.parameters.iops`    | `"1500"`                             | E2E IOPS tier (1500 for 100 GB, 3000 for 200 GB) |
-| `storageClass.allowVolumeExpansion` | `true`                             | |
+| `storageClass.allowVolumeExpansion` | `true`                             | Online resize via `PUT /block_storage/{id}/vm/upgrade/` |
 | `nodeSelector`                    | `{}`                                 | Restrict the node DaemonSet (defaults to every node) |
 | `controllerPlugin.replicaCount`   | `1`                                  | |
 
@@ -245,9 +245,26 @@ as the repo landing page.
 
 ---
 
+## Resizing a PVC
+
+```bash
+kubectl patch pvc data --type=merge \
+  -p '{"spec":{"resources":{"requests":{"storage":"200Gi"}}}}'
+```
+
+The csi-resizer sidecar issues `ControllerExpandVolume`, the driver calls
+E2E's `PUT /block_storage/{id}/vm/upgrade/`, then kubelet's call into
+`NodeExpandVolume` runs `resize2fs`/`xfs_growfs` on the mounted device.
+All online — the pod keeps running. PVC capacity goes through
+`Resizing` → `FileSystemResizePending` → settled in ~30s on a steady-state
+VM (longer if the volume was attached within the last minute, since the
+underlying OpenNebula VM stays in `HOTPLUG` state for a short window after
+attach and the driver retries during that period).
+
+E2E's smallest tier is 100 GB and sizes scale in 100 GB increments.
+
 ## Known gaps / TODO
 
-- [ ] **Resize** (`/upgrade/`) — driver advertises the capability but the API endpoint is not yet wired through.
 - [ ] **Snapshots** — not implemented.
 - [ ] **JWT auto-refresh** — current setup uses a long-lived JWT (≈2 years). Replace with a refresh-on-401 flow before that expires.
 

@@ -20,6 +20,7 @@ import (
 func main() {
 	nodeIP := flag.String("nodeip", "", "private IP of the node to attach to")
 	keep := flag.Bool("keep", false, "skip detach+delete (leave the volume around)")
+	resizeGB := flag.Int("resize", 0, "if >0, after attach call /vm/upgrade/ to grow the volume to this size (GB) and poll for it to settle")
 	flag.Parse()
 
 	apiKey := os.Getenv("E2E_API_KEY")
@@ -68,6 +69,27 @@ func main() {
 		die("get post-attach: %v", err)
 	}
 	fmt.Printf("  ok: status=%s vm_detail=%+v\n", v2.Status, v2.VMDetail)
+
+	if *resizeGB > 0 {
+		step("upgrade volume %d to %d GB (vm_id=%d, name=%q)...", v.BlockID, *resizeGB, vmID, v2.Name)
+		if err := c.UpgradeVolume(ctx, v.BlockID, vmID, *resizeGB, v2.Name); err != nil {
+			die("upgrade: %v", err)
+		}
+		step("poll for size to settle...")
+		wantMiB := *resizeGB * 1024
+		deadline := time.Now().Add(90 * time.Second)
+		for time.Now().Before(deadline) {
+			got, err := c.GetVolume(ctx, v.BlockID)
+			if err != nil {
+				die("post-upgrade get: %v", err)
+			}
+			fmt.Printf("  size=%d MiB status=%s\n", got.SizeMiB, got.Status)
+			if got.SizeMiB >= wantMiB {
+				break
+			}
+			time.Sleep(3 * time.Second)
+		}
+	}
 
 	if *keep {
 		step("--keep set, leaving volume id=%d attached.", v.BlockID)

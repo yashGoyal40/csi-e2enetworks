@@ -37,6 +37,8 @@ sidecars:
     image: registry.k8s.io/sig-storage/csi-provisioner:v5.1.0
   attacher:
     image: registry.k8s.io/sig-storage/csi-attacher:v4.7.0
+  resizer:
+    image: registry.k8s.io/sig-storage/csi-resizer:v1.12.0
   nodeDriverRegistrar:
     image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.12.0
   livenessprobe:
@@ -51,9 +53,10 @@ storageClass:
   parameters:
     fsType: ext4        # ext4 or xfs
     iops: "1500"        # 1500 = 100 GB tier; bump for larger volumes
-  # Volume expansion is unimplemented in the driver; flip to true and
-  # add the csi-resizer sidecar back when ControllerExpandVolume lands.
-  allowVolumeExpansion: false
+  # Online resize is supported via E2E's /vm/upgrade/ endpoint. PVCs sized in
+  # 100 GB increments; the kernel sees the new device size while attached and
+  # NodeExpandVolume grows ext4 / xfs in-place.
+  allowVolumeExpansion: true
   mountOptions: []
 
 # Only NodePlugin pods need privileged + host paths. Controller is plain.

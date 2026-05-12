@@ -70,11 +70,27 @@ spec:
             - name: socket-dir
               mountPath: /csi
 
-        # csi-resizer would go here, but the driver doesn't yet advertise
-        # ControllerExpandVolume (the E2E /upgrade/ endpoint isn't wired
-        # through), so the sidecar would crashloop with "neither supports
-        # controller resize nor node resize". Add it back together with
-        # the EXPAND_VOLUME capability when resize lands.
+        # 4. external-resizer — turns PVC capacity edits into ControllerExpandVolume.
+        #    --handle-volume-inuse-error=false: the driver supports online resize
+        #    (NodeExpandVolume grows the fs while the volume stays mounted), so
+        #    don't gate on the PVC being unmounted.
+        #    --timeout=120s: our ControllerExpandVolume polls the E2E API for up
+        #    to 90s while the OpenNebula resize settles (~15-20s typical, longer
+        #    on a freshly-attached HOTPLUG VM); the default 10s is too tight.
+        - name: csi-resizer
+          image: {{ .Values.sidecars.resizer.image }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--leader-election=false"
+            - "--handle-volume-inuse-error=false"
+            - "--timeout=120s"
+            - "--v=2"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
 
       volumes:
         - name: socket-dir

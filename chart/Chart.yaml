@@ -2,8 +2,8 @@ apiVersion: v2
 name: csi-e2enetworks
 description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning on self-managed Kubernetes clusters running on E2E VMs.
 type: application
-version: 0.1.7
-appVersion: "0.1.5"
+version: 0.1.8
+appVersion: "0.1.6"
 kubeVersion: ">=1.24.0-0"
 home: https://github.com/yashGoyal40/csi-e2enetworks
 sources:
@@ -21,7 +21,7 @@ maintainers:
 annotations:
   artifacthub.io/category: storage
   artifacthub.io/license: Apache-2.0
-  artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.5
+  artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.6
   artifacthub.io/links: |
     - name: source
       url: https://github.com/yashGoyal40/csi-e2enetworks
@@ -30,6 +30,10 @@ annotations:
     - name: e2e networks
       url: https://www.e2enetworks.com
   artifacthub.io/changes: |
+    - kind: added
+      description: Online volume resize. ControllerExpandVolume calls E2E's PUT /block_storage/{id}/vm/upgrade/ (the API E2E enabled for us in May 2026); NodeExpandVolume grows ext4/xfs in-place via mount-utils. csi-resizer sidecar is back in the controller Deployment with --handle-volume-inuse-error=false (online resize) and --timeout=120s (covers the ~15-20s OpenNebula resize lag, plus HOTPLUG retry on freshly-attached volumes). RBAC adds pods get/list/watch for csi-resizer.
+    - kind: changed
+      description: storageClass.allowVolumeExpansion default flipped back to true now that resize is implemented. Existing installs unaffected — Kubernetes lets you flip allowVolumeExpansion on a StorageClass at any time.
     - kind: added
       description: values.schema.json — Helm now validates user values on install/upgrade/template/lint, and ArtifactHub renders the schema panel on the chart page. Enforces anyOf(inline e2e creds OR existingSecret), enum constraints on image.pullPolicy / storageClass.reclaimPolicy / storageClass.parameters.fsType, and integer-string IOPS.
     - kind: fixed

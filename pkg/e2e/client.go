@@ -145,11 +145,23 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 	if env.Code >= 200 && env.Code < 300 {
 		return env.Data, nil
 	}
-	errStr := string(env.Errors)
-	if errStr == "" || errStr == "{}" {
-		errStr = env.Message
+	// Build a useful error string. E2E's error shape varies: some endpoints
+	// populate `errors` (e.g. validation), others (notably the OpenNebula-
+	// backed paths like /vm/upgrade/) leave errors={} and stuff the real
+	// message into `data` as a string while `message` is just the HTTP-class
+	// phrase. Include all three when they carry info so the caller's
+	// classifiers (isVMHotPlugErr, isAlreadyDetachedErr, ...) can match.
+	parts := []string{}
+	if s := strings.TrimSpace(string(env.Errors)); s != "" && s != "{}" && s != "null" {
+		parts = append(parts, s)
 	}
-	return nil, fmt.Errorf("e2e api: HTTP %d (api code %d): %s", resp.StatusCode, env.Code, errStr)
+	if env.Message != "" {
+		parts = append(parts, env.Message)
+	}
+	if s := strings.TrimSpace(string(env.Data)); s != "" && s != "null" && s != "{}" {
+		parts = append(parts, "data="+s)
+	}
+	return nil, fmt.Errorf("e2e api: HTTP %d (api code %d): %s", resp.StatusCode, env.Code, strings.Join(parts, " | "))
 }
 
 func snip(b []byte, n int) string {
@@ -337,6 +349,60 @@ func (c *Client) DetachVolume(ctx context.Context, volumeID, vmID int) error {
 		case <-time.After(1 * time.Second):
 		}
 	}
+}
+
+// UpgradeVolume resizes an attached block volume to newSizeGB. E2E exposes
+// this as PUT /block_storage/{id}/vm/upgrade/ with payload
+// {vm_id, block_storage_size, name}. The endpoint requires the volume to be
+// attached to vmID — there is no offline-resize path. name must be the
+// volume's current name (per the support team's API contract).
+//
+// Behaviour notes (probed against the live API in May 2026):
+//   - Returns 200 immediately; the volume stays status=Attached throughout.
+//   - The `size` field (MiB) updates ~15-20s after the call. The `bs_size`
+//     field (decimal GB) updates immediately to the requested value.
+//   - HTML rate-limit page is swallowed exactly like attach/detach do.
+//   - Right after a fresh attach (typically within ~30-60s) the underlying
+//     OpenNebula VM is still in HOTPLUG state and the API returns 500 with
+//     `wrong state HOTPLUG`. We retry that transient case for ~90s; once the
+//     VM transitions to RUNNING the resize succeeds. In real CSI use the
+//     volume has been attached for minutes-to-days before resize, so this
+//     retry only matters for create→attach→resize sequences in tests.
+func (c *Client) UpgradeVolume(ctx context.Context, volumeID, vmID, newSizeGB int, name string) error {
+	body := map[string]interface{}{
+		"vm_id":              vmID,
+		"block_storage_size": newSizeGB,
+		"name":               name,
+	}
+	path := "/block_storage/" + strconv.Itoa(volumeID) + "/vm/upgrade/"
+
+	deadline := time.Now().Add(90 * time.Second)
+	for {
+		_, err := c.do(ctx, http.MethodPut, path, body)
+		if err == nil || isHTMLLimitErr(err) {
+			return nil
+		}
+		if !isVMHotPlugErr(err) || time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+// isVMHotPlugErr matches the OpenNebula error returned while the underlying
+// VM is still in HOTPLUG state (i.e. an attach hasn't fully transitioned to
+// RUNNING). Transient — clears in tens of seconds.
+func isVMHotPlugErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "wrong state hotplug") ||
+		strings.Contains(s, "diskresize") && strings.Contains(s, "hotplug")
 }
 
 func isHTMLLimitErr(err error) bool {
