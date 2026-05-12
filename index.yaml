@@ -5,6 +5,8 @@ entries:
       artifacthub.io/category: storage
       artifacthub.io/changes: |
         - kind: added
+          description: Helm chart packages are now GPG-signed. CI runs `helm package --sign` and publishes the `.prov` provenance file alongside the `.tgz`, plus the public key at /key.gpg. Verify with `helm install --verify`. Artifact Hub picks up the "Signed" badge automatically.
+        - kind: added
           description: Online volume resize. ControllerExpandVolume calls E2E's PUT /block_storage/{id}/vm/upgrade/ (the API E2E enabled for us in May 2026); NodeExpandVolume grows ext4/xfs in-place via mount-utils. csi-resizer sidecar is back in the controller Deployment with --handle-volume-inuse-error=false (online resize) and --timeout=120s (covers the ~15-20s OpenNebula resize lag, plus HOTPLUG retry on freshly-attached volumes). RBAC adds pods get/list/watch for csi-resizer.
         - kind: changed
           description: storageClass.allowVolumeExpansion default flipped back to true now that resize is implemented. Existing installs unaffected — Kubernetes lets you flip allowVolumeExpansion on a StorageClass at any time.
@@ -49,12 +51,15 @@ entries:
           url: https://hub.docker.com/r/yashgoyal04/csi-e2enetworks
         - name: e2e networks
           url: https://www.e2enetworks.com
+      artifacthub.io/signKey: |
+        fingerprint: C9E74371DC35813ED52E3209A545160D71DC6430
+        url: https://yashGoyal40.github.io/csi-e2enetworks/key.gpg
     apiVersion: v2
     appVersion: 0.1.6
-    created: "2026-05-12T07:46:18.954880648Z"
+    created: "2026-05-12T08:47:28.420875482Z"
     description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
       on self-managed Kubernetes clusters running on E2E VMs.
-    digest: 4fe544b7b518a1e80a9b9f8b27f46b350334965fe99abab66c68c113c75793b9
+    digest: fb8f6dc44ffc35823d173f7282273c2158cce75c21437de991d41d60fd62ed35
     home: https://github.com/yashGoyal40/csi-e2enetworks
     icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
     keywords:
@@ -72,6 +77,6 @@ entries:
     - https://github.com/yashGoyal40/csi-e2enetworks
     type: application
     urls:
-    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.8.tgz
-    version: 0.1.8
-generated: "2026-05-12T07:46:18.953876717Z"
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.9.tgz
+    version: 0.1.9
+generated: "2026-05-12T08:47:28.419895469Z"

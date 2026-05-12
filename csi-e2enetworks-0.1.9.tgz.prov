@@ -1,0 +1,97 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+annotations:
+  artifacthub.io/category: storage
+  artifacthub.io/changes: |
+    - kind: added
+      description: Helm chart packages are now GPG-signed. CI runs `helm package --sign` and publishes the `.prov` provenance file alongside the `.tgz`, plus the public key at /key.gpg. Verify with `helm install --verify`. Artifact Hub picks up the "Signed" badge automatically.
+    - kind: added
+      description: Online volume resize. ControllerExpandVolume calls E2E's PUT /block_storage/{id}/vm/upgrade/ (the API E2E enabled for us in May 2026); NodeExpandVolume grows ext4/xfs in-place via mount-utils. csi-resizer sidecar is back in the controller Deployment with --handle-volume-inuse-error=false (online resize) and --timeout=120s (covers the ~15-20s OpenNebula resize lag, plus HOTPLUG retry on freshly-attached volumes). RBAC adds pods get/list/watch for csi-resizer.
+    - kind: changed
+      description: storageClass.allowVolumeExpansion default flipped back to true now that resize is implemented. Existing installs unaffected — Kubernetes lets you flip allowVolumeExpansion on a StorageClass at any time.
+    - kind: added
+      description: values.schema.json — Helm now validates user values on install/upgrade/template/lint, and ArtifactHub renders the schema panel on the chart page. Enforces anyOf(inline e2e creds OR existingSecret), enum constraints on image.pullPolicy / storageClass.reclaimPolicy / storageClass.parameters.fsType, and integer-string IOPS.
+    - kind: fixed
+      description: NodeStageVolume now identifies the freshly attached disk by picking the unmounted virtio device with the highest diskseq, instead of diffing /sys/block before/after a PCI rescan. The diff approach was racy — by the time NodeStage runs, the device is often already enumerated by the kernel, so the diff returned empty and the driver gave up with "no new block device appeared within 30s after attach". Reads /host/proc/1/mounts (host PID-1's mount NS) to identify which devices are already in use.
+    - kind: fixed
+      description: NodeStageVolume is now idempotent — if the staging path is already mounted, returns success instead of re-running device discovery
+    - kind: fixed
+      description: DetachVolume now considers "attached to a different VM" as success for the requested target VM. CSI sometimes leaves a stale per-node VolumeAttachment after a cross-node move; reconciling that VA was waiting for status=Available which never arrives because the volume is happily attached elsewhere, leaving the PV in a permanent Released state with detach errors.
+    - kind: fixed
+      description: DetachVolume treats HTTP 412 "Disk is not attached to vm" as success (CSI retries detach idempotently; the old behavior wedged VolumeAttachment objects on cross-node move)
+    - kind: changed
+      description: AttachVolume / DetachVolume polls tightened to 1s with shorter caps (60s precheck, 30s post-attach) so the create→attach path lands in ~10–15s instead of 30–60s
+    - kind: fixed
+      description: Node plugin reads /host/sys/block instead of /sys/block — containerd remounts /sys per-container so the chart's hostPath:/sys was being shadowed and the post-attach device-discovery diff always returned no new device
+    - kind: fixed
+      description: AttachVolume now polls for status=Available before issuing the PUT, eliminating the HTTP 500 retry loop ControllerPublishVolume hit when CreateVolume returned status=Creating
+    - kind: removed
+      description: csi-resizer sidecar (E2E API does not expose volume resize for non-admin tokens; the role required for PATCH /block_storage/{id}/ is gated)
+    - kind: changed
+      description: Default image.tag is now `latest` with imagePullPolicy Always; pin to a numeric tag for reproducible deploys
+    - kind: changed
+      description: storageClass.allowVolumeExpansion default flipped to false to match the no-resizer reality
+    - kind: fixed
+      description: Driver renamed to csi.e2enetworks.com (vendor-namespaced)
+    - kind: fixed
+      description: Controller binary registers Node CSI service so sidecar capability probes succeed
+    - kind: added
+      description: Initial release with CreateVolume / DeleteVolume / Attach / Detach / Stage / Publish
+    - kind: added
+      description: Single-binary controller + node plugin
+    - kind: added
+      description: Helm chart with controller Deployment, node DaemonSet, RBAC, CSIDriver, StorageClass
+  artifacthub.io/containerImage: docker.io/yashgoyal04/csi-e2enetworks:0.1.6
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: source
+      url: https://github.com/yashGoyal40/csi-e2enetworks
+    - name: image
+      url: https://hub.docker.com/r/yashgoyal04/csi-e2enetworks
+    - name: e2e networks
+      url: https://www.e2enetworks.com
+  artifacthub.io/signKey: |
+    fingerprint: C9E74371DC35813ED52E3209A545160D71DC6430
+    url: https://yashGoyal40.github.io/csi-e2enetworks/key.gpg
+apiVersion: v2
+appVersion: 0.1.6
+description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
+  on self-managed Kubernetes clusters running on E2E VMs.
+home: https://github.com/yashGoyal40/csi-e2enetworks
+icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
+keywords:
+- - csi
+- - e2enetworks
+- - storage
+- - block
+- - persistent-volume
+kubeVersion: '>=1.24.0-0'
+maintainers:
+- - email: yashg4118@gmail.com
+  name: yashGoyal40
+name: csi-e2enetworks
+sources:
+- - https://github.com/yashGoyal40/csi-e2enetworks
+type: application
+version: 0.1.9
+
+...
+files:
+  csi-e2enetworks-0.1.9.tgz: sha256:fb8f6dc44ffc35823d173f7282273c2158cce75c21437de991d41d60fd62ed35
+-----BEGIN PGP SIGNATURE-----
+
+wsFcBAEBCgAQBQJqAukgCRClRRYNcdxkMAAAnM0QAD58/8U0XnTvMFMo5g52nnss
+NSPV7jF/GwPGHfWeCX/0nMBZywbhvAgFYu4fDl/13fqLntNwxlCdJmbnMui0veYN
+Nuuea1jSXGKjeYXf5DFfp0HpSvrYOjwJ14hL9ZA8FsIBRUGVtjWBwabcYvXDpqYU
+qUaT/rs/x7xlPXqw+HUN0vQnYSstePb6Y/87FKUSpre25VEBY5nH4/Pp9nw/lSOV
+PbMovFxP9yFz8C/3megdIuZWUxp17GqI/mn8Rbt9lIEpfthZtfqqbeGQT/aRYOj7
+3dKd4Pq7tYOuEnhHfVsGOP+OtGqmyeprhkCZmXYh5ZjfALZDi4y4ydCRipA6sb0n
+d+baz+4lypnhGULI/XSPepBvpNtjKQ+/5imIIhBHu7vZqWes3oFmI5M28z71oC7V
+J9H9LrsarRP+WE2ccEEfNlRnamwieUHVVP1pd3I00ANHCf8yJal+3vYPIVkxLINh
+YeKkVf+pgdaw3AATUTmsF788WWkOit8WfNofGohaek29M7UcC6YX/9cJ6v4YMPIS
+Ov2SbDVj/ZFZYhpjxBD1Z17SNZx6gtiVnzVZYEo2FYSbDOBrEs1X/fniPLAP1Qea
+Dq//LAW2PZUU9aB4KiPxosARpjSYHRKwJQjy0WltEZ/B7uI5RiG9rBWfs0shNqi+
+RtSAdoUv37yBzSQdzZoD
+=bk2C
+-----END PGP SIGNATURE-----
