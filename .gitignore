@@ -24,3 +24,6 @@ vendor/
 *.test
 *.out
 coverage.*
+
+# Claude Code harness scratch
+.claude/
