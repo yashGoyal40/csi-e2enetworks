@@ -4,6 +4,8 @@ Hash: SHA512
 annotations:
   artifacthub.io/category: storage
   artifacthub.io/changes: |
+    - kind: fixed
+      description: Node plugin now bidirectionally mounts the entire kubelet root (default /var/lib/kubelet) instead of just /var/lib/kubelet/pods. Previously the per-volume staging directory (plugins/kubernetes.io/csi/<driver>/<volHandle>/globalmount) was created and mounted inside the container's ephemeral overlayfs, so a node-plugin pod restart (rolling update, OOM, image pull, crashloop) wiped the staging mount. Kubelet's actualStateOfWorld still believed the volume was staged and called NodePublishVolume directly, which then failed with "bind-mount: special device .../globalmount does not exist" — pods stuck ContainerCreating, eviction cascades. With the bidirectional mount the staging mount lives on the host and survives plugin restarts.
     - kind: added
       description: Helm chart packages are now GPG-signed. CI runs `helm package --sign` and publishes the `.prov` provenance file alongside the `.tgz`, plus the public key at /key.gpg. Verify with `helm install --verify`. Artifact Hub picks up the "Signed" badge automatically.
     - kind: added
@@ -74,24 +76,24 @@ name: csi-e2enetworks
 sources:
 - - https://github.com/yashGoyal40/csi-e2enetworks
 type: application
-version: 0.1.9
+version: 0.1.10
 
 ...
 files:
-  csi-e2enetworks-0.1.9.tgz: sha256:fb8f6dc44ffc35823d173f7282273c2158cce75c21437de991d41d60fd62ed35
+  csi-e2enetworks-0.1.10.tgz: sha256:0f70a56a2e0c6581947e244f2223bec5a41573c8000f514bac40a53f2604d21d
 -----BEGIN PGP SIGNATURE-----
 
-wsFcBAEBCgAQBQJqAukgCRClRRYNcdxkMAAAnM0QAD58/8U0XnTvMFMo5g52nnss
-NSPV7jF/GwPGHfWeCX/0nMBZywbhvAgFYu4fDl/13fqLntNwxlCdJmbnMui0veYN
-Nuuea1jSXGKjeYXf5DFfp0HpSvrYOjwJ14hL9ZA8FsIBRUGVtjWBwabcYvXDpqYU
-qUaT/rs/x7xlPXqw+HUN0vQnYSstePb6Y/87FKUSpre25VEBY5nH4/Pp9nw/lSOV
-PbMovFxP9yFz8C/3megdIuZWUxp17GqI/mn8Rbt9lIEpfthZtfqqbeGQT/aRYOj7
-3dKd4Pq7tYOuEnhHfVsGOP+OtGqmyeprhkCZmXYh5ZjfALZDi4y4ydCRipA6sb0n
-d+baz+4lypnhGULI/XSPepBvpNtjKQ+/5imIIhBHu7vZqWes3oFmI5M28z71oC7V
-J9H9LrsarRP+WE2ccEEfNlRnamwieUHVVP1pd3I00ANHCf8yJal+3vYPIVkxLINh
-YeKkVf+pgdaw3AATUTmsF788WWkOit8WfNofGohaek29M7UcC6YX/9cJ6v4YMPIS
-Ov2SbDVj/ZFZYhpjxBD1Z17SNZx6gtiVnzVZYEo2FYSbDOBrEs1X/fniPLAP1Qea
-Dq//LAW2PZUU9aB4KiPxosARpjSYHRKwJQjy0WltEZ/B7uI5RiG9rBWfs0shNqi+
-RtSAdoUv37yBzSQdzZoD
-=bk2C
+wsFcBAEBCgAQBQJqBCT+CRClRRYNcdxkMAAAoXMQAKpWU8c2LimCMdGETp7xiMaB
+9p2jVngoUixeu8ISttH60VAJDbnEe80DHsgIRwvD1dNT4Aqvc3prqfBd0bw7oQT3
+WA5XgCBqRX0SMtCndYu5RtTjH9LvlMzzkTlBG7HtzIA5EhP5K16oifN64k4pzc29
+FF+at9T5v8tiKrJy3igp0l+sYiMRiy6GflWB0CGNckubalj9fisFI1qKH3yoiK6L
+I0WFAtA4pmCuvo4Elu2Jh+HTYeUsNoy/RbY2rEXBtC1Dys3KhaJzNTZTaqdA7plR
+W4M6W9MyenKtyO1elvKpcTzODH1++fDbaE86gL+ift1C1uaFUiXFKOyytBDImCa5
+6tfOI1QJAnRjZ3MTv7VNfPQfb4RnPfwKQlfTUbSm5HD1J78idB31J40aQW7EcNoV
+Z06ESk5E2p4uzd9dSu3EW8YP6xsNcMSNVVxTkAqpctsul2h+7DRPm9Ac2xxTIL1K
+guVhZYcN9f8ttxSiwD1mXE+dv+PJTCtVUk5FjC3Qu7V9kHu9uw+db5l3+BnFC3A9
+xt9LKBAtRcoeNNYVQsXFSlWY5Woybzr12D1pDY2l/PP8g8BMXRHc+F5v2+30W8Xu
+4eKrXpe92yl3G631c05T45oygRmBqiuYDyPw5jZ5jfRNcleSVQ5Y0/H/+4w7xgYN
+RCXWp8/NN2oZ0Qep4ysl
+=zoQO
 -----END PGP SIGNATURE-----

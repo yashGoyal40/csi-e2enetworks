@@ -4,6 +4,8 @@ entries:
   - annotations:
       artifacthub.io/category: storage
       artifacthub.io/changes: |
+        - kind: fixed
+          description: Node plugin now bidirectionally mounts the entire kubelet root (default /var/lib/kubelet) instead of just /var/lib/kubelet/pods. Previously the per-volume staging directory (plugins/kubernetes.io/csi/<driver>/<volHandle>/globalmount) was created and mounted inside the container's ephemeral overlayfs, so a node-plugin pod restart (rolling update, OOM, image pull, crashloop) wiped the staging mount. Kubelet's actualStateOfWorld still believed the volume was staged and called NodePublishVolume directly, which then failed with "bind-mount: special device .../globalmount does not exist" — pods stuck ContainerCreating, eviction cascades. With the bidirectional mount the staging mount lives on the host and survives plugin restarts.
         - kind: added
           description: Helm chart packages are now GPG-signed. CI runs `helm package --sign` and publishes the `.prov` provenance file alongside the `.tgz`, plus the public key at /key.gpg. Verify with `helm install --verify`. Artifact Hub picks up the "Signed" badge automatically.
         - kind: added
@@ -56,10 +58,10 @@ entries:
         url: https://yashGoyal40.github.io/csi-e2enetworks/key.gpg
     apiVersion: v2
     appVersion: 0.1.6
-    created: "2026-05-12T08:47:28.420875482Z"
+    created: "2026-05-13T07:15:10.273727937Z"
     description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning
       on self-managed Kubernetes clusters running on E2E VMs.
-    digest: fb8f6dc44ffc35823d173f7282273c2158cce75c21437de991d41d60fd62ed35
+    digest: 0f70a56a2e0c6581947e244f2223bec5a41573c8000f514bac40a53f2604d21d
     home: https://github.com/yashGoyal40/csi-e2enetworks
     icon: https://raw.githubusercontent.com/cncf/artwork/main/projects/kubernetes/icon/color/kubernetes-icon-color.svg
     keywords:
@@ -77,6 +79,6 @@ entries:
     - https://github.com/yashGoyal40/csi-e2enetworks
     type: application
     urls:
-    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.9.tgz
-    version: 0.1.9
-generated: "2026-05-12T08:47:28.419895469Z"
+    - https://yashGoyal40.github.io/csi-e2enetworks/csi-e2enetworks-0.1.10.tgz
+    version: 0.1.10
+generated: "2026-05-13T07:15:10.272671342Z"
