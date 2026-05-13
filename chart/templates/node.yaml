@@ -52,8 +52,14 @@ spec:
           volumeMounts:
             - name: plugin-dir
               mountPath: /csi
-            - name: pods-mount-dir
-              mountPath: {{ .Values.kubeletDir }}/pods
+            # Mount the whole kubelet root bidirectionally so staging mounts
+            # the driver creates under plugins/kubernetes.io/csi/.../globalmount
+            # live on the host and survive node-plugin restarts. Without this
+            # the staging path is created in the container's ephemeral overlay
+            # fs and disappears when the pod restarts, breaking subsequent
+            # NodePublishVolume calls with "special device ... does not exist".
+            - name: kubelet-dir
+              mountPath: {{ .Values.kubeletDir }}
               mountPropagation: Bidirectional
             - name: device-dir
               mountPath: /dev
@@ -86,9 +92,9 @@ spec:
           hostPath:
             path: {{ .Values.kubeletDir }}/plugins_registry
             type: Directory
-        - name: pods-mount-dir
+        - name: kubelet-dir
           hostPath:
-            path: {{ .Values.kubeletDir }}/pods
+            path: {{ .Values.kubeletDir }}
             type: Directory
         - name: device-dir
           hostPath: { path: /dev }

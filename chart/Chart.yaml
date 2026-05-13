@@ -2,7 +2,7 @@ apiVersion: v2
 name: csi-e2enetworks
 description: CSI driver for E2E Networks block storage. Enables dynamic PVC provisioning on self-managed Kubernetes clusters running on E2E VMs.
 type: application
-version: 0.1.9
+version: 0.1.10
 appVersion: "0.1.6"
 kubeVersion: ">=1.24.0-0"
 home: https://github.com/yashGoyal40/csi-e2enetworks
@@ -33,6 +33,8 @@ annotations:
     - name: e2e networks
       url: https://www.e2enetworks.com
   artifacthub.io/changes: |
+    - kind: fixed
+      description: Node plugin now bidirectionally mounts the entire kubelet root (default /var/lib/kubelet) instead of just /var/lib/kubelet/pods. Previously the per-volume staging directory (plugins/kubernetes.io/csi/<driver>/<volHandle>/globalmount) was created and mounted inside the container's ephemeral overlayfs, so a node-plugin pod restart (rolling update, OOM, image pull, crashloop) wiped the staging mount. Kubelet's actualStateOfWorld still believed the volume was staged and called NodePublishVolume directly, which then failed with "bind-mount: special device .../globalmount does not exist" — pods stuck ContainerCreating, eviction cascades. With the bidirectional mount the staging mount lives on the host and survives plugin restarts.
     - kind: added
       description: Helm chart packages are now GPG-signed. CI runs `helm package --sign` and publishes the `.prov` provenance file alongside the `.tgz`, plus the public key at /key.gpg. Verify with `helm install --verify`. Artifact Hub picks up the "Signed" badge automatically.
     - kind: added
